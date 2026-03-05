@@ -1105,34 +1105,50 @@ function getSelectedPriority() {
 
 // 智能时间识别
 function parseSmartTime(text) {
-  const rangePatterns = [
-    /(\d{1,2})[点时：:](\d{0,2})\s*[到至\-—~～]\s*(\d{1,2})[点时：:]?(\d{0,2})/,
-    /(\d{1,2}):(\d{2})\s*[到至\-—~～]\s*(\d{1,2}):(\d{2})/,
-  ];
-  for (const pat of rangePatterns) {
-    const m = text.match(pat);
-    if (m) {
-      const h1 = m[1].padStart(2, '0');
-      const m1 = (m[2] || '00').padStart(2, '0');
-      const h2 = m[3].padStart(2, '0');
-      const m2 = (m[4] || '00').padStart(2, '0');
-      return { type: 'range', start: `${h1}:${m1}`, end: `${h2}:${m2}` };
+  // 预处理：全角数字→半角，全角冒号→半角
+  const t = text.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+               .replace(/：/g, ':');
+
+  // Range: "20-21点"、"9~10点" (纯数字-数字+点/时)
+  const shortRange = t.match(/(\d{1,2})\s*[到至\-\—~～]\s*(\d{1,2})\s*[点时]/);
+  if (shortRange) {
+    let h1 = +shortRange[1], h2 = +shortRange[2];
+    if (h1 >= 0 && h1 <= 23 && h2 >= 0 && h2 <= 23) {
+      return { type: 'range', start: `${String(h1).padStart(2,'0')}:00`, end: `${String(h2).padStart(2,'0')}:00` };
     }
   }
-  const halfMatch = text.match(/(\d{1,2})[点时]半/);
+
+  const rangePatterns = [
+    // "10点到11点"、"10:00到11:30"、"10时-11时"
+    /(\d{1,2})[点时:](\d{0,2})\s*[到至\-\—~～]\s*(\d{1,2})[点时:]?(\d{0,2})/,
+    // "10:00-11:00"
+    /(\d{1,2}):(\d{2})\s*[到至\-\—~～]\s*(\d{1,2}):(\d{2})/,
+  ];
+  for (const pat of rangePatterns) {
+    const m = t.match(pat);
+    if (m) {
+      let h1 = +m[1], m1 = +(m[2] || 0), h2 = +m[3], m2 = +(m[4] || 0);
+      if (h1 >= 0 && h1 <= 23 && h2 >= 0 && h2 <= 23) {
+        return { type: 'range', start: `${String(h1).padStart(2,'0')}:${String(m1).padStart(2,'0')}`, end: `${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}` };
+      }
+    }
+  }
+  const halfMatch = t.match(/(\d{1,2})[点时]半/);
   if (halfMatch) {
-    return { type: 'single', start: `${halfMatch[1].padStart(2, '0')}:30` };
+    const h = +halfMatch[1];
+    if (h >= 0 && h <= 23) return { type: 'single', start: `${String(h).padStart(2,'0')}:30` };
   }
   const singlePatterns = [
-    /(\d{1,2})[点时：:](\d{0,2})(?:半)?/,
+    /(\d{1,2})[点时:](\d{0,2})(?:半)?/,
     /(\d{1,2}):(\d{2})/,
   ];
   for (const pat of singlePatterns) {
-    const m = text.match(pat);
+    const m = t.match(pat);
     if (m) {
-      const h = m[1].padStart(2, '0');
-      const min = (m[2] || '00').padStart(2, '0');
-      return { type: 'single', start: `${h}:${min}` };
+      const h = +m[1], min = +(m[2] || 0);
+      if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+        return { type: 'single', start: `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}` };
+      }
     }
   }
   return null;
