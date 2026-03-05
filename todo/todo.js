@@ -764,37 +764,12 @@ function renderTodoList() {
       repeatBadge = `<span class="repeat-badge repeat-${item.repeat.type}">${repeatSvg}<span class="repeat-badge-text">${labels[item.repeat.type] || '重复'}</span></span>`;
     }
 
-    // 子任务渲染
-    let subtasksHtml = '';
-    const subtasks = item.subtasks || [];
-    if (subtasks.length > 0) {
-      subtasksHtml = `<div class="subtask-list">`;
-      subtasksHtml += subtasks.map((st, si) => `
-        <div class="subtask-item${st.done ? ' done' : ''}">
-          <button class="subtask-checkbox${st.done ? ' checked' : ''}" data-parent-id="${item.id}" data-sub-index="${si}">${st.done ? '✓' : ''}</button>
-          <span class="subtask-text">${escapeHtml(st.text)}</span>
-          <button class="subtask-delete" data-parent-id="${item.id}" data-sub-index="${si}">✕</button>
-        </div>
-      `).join('');
-      subtasksHtml += `</div>`;
-    }
-
-    // 添加子任务入口
-    subtasksHtml += `
-      <div class="add-subtask" data-parent-id="${item.id}" style="display:none;">
-        <input type="text" placeholder="添加子任务..." maxlength="30" data-parent-id="${item.id}">
-        <button data-parent-id="${item.id}">添加</button>
-      </div>
-      <button class="toggle-subtask-btn" data-parent-id="${item.id}">+ 子任务</button>
-    `;
-
     return `
       <div class="todo-item priority-${item.priority}${item.done ? ' completed' : ''}${carryClass}" data-id="${item.id}" draggable="true">
         ${carriedBadge}
         <button class="todo-checkbox${item.done ? ' checked' : ''}" data-id="${item.id}">${item.done ? '✓' : ''}</button>
         <div class="todo-info">
           <div class="todo-text" data-id="${item.id}">${escapeHtml(item.text)}${repeatBadge}</div>
-          ${subtasksHtml}
         </div>
         <button class="todo-delete" data-id="${item.id}" title="删除">✕</button>
       </div>
@@ -828,49 +803,6 @@ function bindTodoEvents(listEl) {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       openEditDialog(el.dataset.id);
-    });
-  });
-
-  // 子任务相关事件
-  listEl.querySelectorAll('.subtask-checkbox').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleSubtask(btn.dataset.parentId, +btn.dataset.subIndex);
-    });
-  });
-
-  listEl.querySelectorAll('.subtask-delete').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteSubtask(btn.dataset.parentId, +btn.dataset.subIndex);
-    });
-  });
-
-  listEl.querySelectorAll('.toggle-subtask-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const addRow = listEl.querySelector(`.add-subtask[data-parent-id="${btn.dataset.parentId}"]`);
-      if (addRow) {
-        const isVisible = addRow.style.display !== 'none';
-        addRow.style.display = isVisible ? 'none' : 'flex';
-        if (!isVisible) addRow.querySelector('input').focus();
-      }
-    });
-  });
-
-  listEl.querySelectorAll('.add-subtask button').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      addSubtask(btn.dataset.parentId);
-    });
-  });
-
-  listEl.querySelectorAll('.add-subtask input').forEach(input => {
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.stopPropagation();
-        addSubtask(input.dataset.parentId);
-      }
     });
   });
 
@@ -985,66 +917,6 @@ function saveEdit() {
   renderTodoList();
   updateTodoHeader();
   closeEditDialog();
-}
-
-// ========== 子任务 ==========
-function addSubtask(parentId) {
-  const key = dateKey(selectedDate);
-  const item = (todos[key] || []).find(t => t.id === parentId);
-  if (!item) return;
-
-  const input = document.querySelector(`.add-subtask[data-parent-id="${parentId}"] input`);
-  const text = input ? input.value.trim() : '';
-  if (!text) return;
-
-  if (!item.subtasks) item.subtasks = [];
-  item.subtasks.push({ text, done: false });
-
-  if (input) input.value = '';
-  backupTodosToLocal();
-  renderTodoList();
-  updateTodoHeader();
-}
-
-function toggleSubtask(parentId, subIndex) {
-  const key = dateKey(selectedDate);
-  const item = (todos[key] || []).find(t => t.id === parentId);
-  if (!item || !item.subtasks || !item.subtasks[subIndex]) return;
-
-  item.subtasks[subIndex].done = !item.subtasks[subIndex].done;
-
-  // 检查所有子任务是否全部完成 -> 自动标记父任务完成
-  if (item.subtasks.length > 0 && item.subtasks.every(st => st.done)) {
-    if (!item.done) {
-      item.done = true;
-      // 云端更新
-      if (!parentId.startsWith('local_')) {
-        withTimeout(_supaClient.from('todos').update({ done: true }).eq('id', parentId), 8000)
-          .catch(() => {});
-      }
-    }
-  }
-
-  backupTodosToLocal();
-  renderTodoList();
-  updateTodoHeader();
-  renderCalendar();
-
-  // 检查全部完成
-  const allItems = getTodosForDate(key);
-  if (allItems.length > 0 && allItems.every(t => t.done)) {
-    setTimeout(() => showCompletionOverlay(), 300);
-  }
-}
-
-function deleteSubtask(parentId, subIndex) {
-  const key = dateKey(selectedDate);
-  const item = (todos[key] || []).find(t => t.id === parentId);
-  if (!item || !item.subtasks) return;
-
-  item.subtasks.splice(subIndex, 1);
-  backupTodosToLocal();
-  renderTodoList();
 }
 
 // ========== 添加待办 ==========
@@ -2016,6 +1888,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (btn.dataset.tab === 'summary') renderSummary();
     });
   });
+
+  // 右上角设置齿轮按钮
+  const cornerSettingsBtn = document.getElementById('cornerSettingsBtn');
+  if (cornerSettingsBtn) {
+    cornerSettingsBtn.addEventListener('click', () => {
+      // 取消所有 tab active，激活 settings
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
+      const settingsSection = document.getElementById('settingsSection');
+      if (settingsSection) settingsSection.classList.add('active');
+    });
+  }
 
   // 日历导航
   document.getElementById('prevMonth').addEventListener('click', () => {

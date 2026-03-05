@@ -364,6 +364,36 @@ body::after {
 .clock-sep { font-size: 0.7rem; opacity: 0.5; }
 .clock-date { font-weight: 400; font-size: 0.78rem; }
 
+/* 右上角设置齿轮 */
+.corner-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-light);
+  cursor: pointer;
+  padding: 0;
+  margin-left: 6px;
+  transition: all 0.3s ease;
+  opacity: 0.6;
+}
+
+.corner-settings-btn:hover {
+  opacity: 1;
+  color: var(--primary);
+  background: rgba(255, 140, 66, 0.08);
+  transform: rotate(45deg);
+}
+
+.corner-settings-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 .subtitle {
   color: var(--text-light);
   font-size: 1rem;
@@ -954,124 +984,6 @@ body::after {
 
 .todo-item.completed .todo-text:hover {
   color: var(--text-lighter);
-}
-
-/* ========== 子任务 ========== */
-.subtask-list {
-  margin-top: 8px;
-  padding-left: 4px;
-}
-
-.subtask-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 0.85rem;
-}
-
-.subtask-checkbox {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: transparent;
-  font-size: 0;
-  color: #fff;
-  padding: 0;
-}
-
-.subtask-checkbox:hover { border-color: var(--primary); }
-
-.subtask-checkbox.checked {
-  background: var(--success);
-  border-color: var(--success);
-  font-size: 0.55rem;
-}
-
-.subtask-text {
-  flex: 1;
-  color: var(--text);
-  font-size: 0.85rem;
-}
-
-.subtask-item.done .subtask-text {
-  text-decoration: line-through;
-  color: var(--text-lighter);
-}
-
-.subtask-delete {
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-lighter);
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  flex-shrink: 0;
-  opacity: 0;
-}
-
-.subtask-item:hover .subtask-delete { opacity: 1; }
-.subtask-delete:hover { background: rgba(255, 107, 107, 0.12); color: var(--danger); }
-
-.add-subtask {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.add-subtask input {
-  flex: 1;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.8rem;
-  outline: none;
-  background: var(--input-bg);
-  color: var(--text);
-}
-
-.add-subtask input:focus { border-color: var(--primary); }
-
-.add-subtask button {
-  padding: 4px 10px;
-  border: none;
-  border-radius: 6px;
-  background: var(--primary);
-  color: #fff;
-  font-size: 0.75rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.toggle-subtask-btn {
-  padding: 2px 8px;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-lighter);
-  font-size: 0.72rem;
-  cursor: pointer;
-  margin-top: 4px;
-  transition: all 0.2s;
-}
-
-.toggle-subtask-btn:hover {
-  border-color: var(--primary);
-  color: var(--primary);
 }
 
 /* 重复任务标记 — 默认低调小图标，hover展开胶囊 */
