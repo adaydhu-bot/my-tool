@@ -586,9 +586,16 @@ body::after {
   white-space: nowrap;
 }
 
-.add-todo-btn:hover {
+.add-todo-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 15px rgba(255, 140, 66, 0.35);
+}
+
+.add-todo-btn:disabled,
+.add-idea-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ========== 待办筛选 ========== */

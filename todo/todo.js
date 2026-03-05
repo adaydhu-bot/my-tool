@@ -611,8 +611,13 @@ function getSelectedPriority() {
   return selected ? selected.dataset.priority : 'mid';
 }
 
+let isAddingTodo = false;
+
 async function addTodo() {
+  if (isAddingTodo) return; // 防止重复点击
+
   const input = document.getElementById('todoInput');
+  const addBtn = document.getElementById('addTodoBtn');
   const priority = getSelectedPriority();
   const text = input.value.trim();
 
@@ -626,41 +631,55 @@ async function addTodo() {
     return;
   }
 
+  // 显示加载状态
+  isAddingTodo = true;
+  addBtn.disabled = true;
+  addBtn.textContent = '添加中...';
+
   const key = dateKey(selectedDate);
 
-  const { data, error } = await _supaClient
-    .from('todos')
-    .insert({
-      user_id: currentUser.id,
-      date: key,
-      text,
-      priority,
-      done: false
-    })
-    .select()
-    .single();
+  try {
+    const { data, error } = await _supaClient
+      .from('todos')
+      .insert({
+        user_id: currentUser.id,
+        date: key,
+        text,
+        priority,
+        done: false
+      })
+      .select()
+      .single();
 
-  if (error) {
-    console.error('添加失败:', error);
-    alert('添加失败: ' + error.message);
-    return;
+    if (error) {
+      console.error('添加失败:', error);
+      alert('添加失败: ' + error.message);
+      return;
+    }
+
+    if (!todos[key]) todos[key] = [];
+    todos[key].push({
+      id: data.id,
+      text: data.text,
+      priority: data.priority,
+      done: data.done,
+      createdAt: data.created_at,
+      carriedFrom: data.carried_from || null
+    });
+
+    input.value = '';
+    backupTodosToLocal();
+    renderTodoList();
+    renderCalendar();
+    updateTodoHeader();
+  } catch (err) {
+    console.error('添加待办异常:', err);
+    alert('网络错误，请检查网络后重试');
+  } finally {
+    isAddingTodo = false;
+    addBtn.disabled = false;
+    addBtn.textContent = '添加';
   }
-
-  if (!todos[key]) todos[key] = [];
-  todos[key].push({
-    id: data.id,
-    text: data.text,
-    priority: data.priority,
-    done: data.done,
-    createdAt: data.created_at,
-    carriedFrom: data.carried_from || null
-  });
-
-  input.value = '';
-  backupTodosToLocal();
-  renderTodoList();
-  renderCalendar();
-  updateTodoHeader();
 }
 
 async function toggleTodo(id) {
@@ -1160,8 +1179,13 @@ function renderNewIdeaTags() {
   });
 }
 
+let isAddingIdea = false;
+
 async function addIdea() {
+  if (isAddingIdea) return;
+
   const input = document.getElementById('ideaInput');
+  const addBtn = document.getElementById('addIdeaBtn');
   const text = input.value.trim();
 
   if (!text) {
@@ -1169,34 +1193,48 @@ async function addIdea() {
     return;
   }
 
-  const { data, error } = await _supaClient
-    .from('ideas')
-    .insert({
-      user_id: currentUser.id,
-      text,
-      tags: [...newIdeaTags]
-    })
-    .select()
-    .single();
+  isAddingIdea = true;
+  addBtn.disabled = true;
+  addBtn.textContent = '记录中...';
 
-  if (error) {
-    console.error('添加失败:', error);
-    return;
+  try {
+    const { data, error } = await _supaClient
+      .from('ideas')
+      .insert({
+        user_id: currentUser.id,
+        text,
+        tags: [...newIdeaTags]
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('添加失败:', error);
+      alert('添加灵感失败: ' + error.message);
+      return;
+    }
+
+    ideas.push({
+      id: data.id,
+      text: data.text,
+      tags: data.tags || [],
+      createdAt: data.created_at
+    });
+
+    input.value = '';
+    newIdeaTags = [];
+    renderNewIdeaTags();
+    backupIdeasToLocal();
+    renderIdeasList();
+    renderIdeaFilterTags();
+  } catch (err) {
+    console.error('添加灵感异常:', err);
+    alert('网络错误，请检查网络后重试');
+  } finally {
+    isAddingIdea = false;
+    addBtn.disabled = false;
+    addBtn.textContent = '记录灵感 💡';
   }
-
-  ideas.push({
-    id: data.id,
-    text: data.text,
-    tags: data.tags || [],
-    createdAt: data.created_at
-  });
-
-  input.value = '';
-  newIdeaTags = [];
-  renderNewIdeaTags();
-  backupIdeasToLocal();
-  renderIdeasList();
-  renderIdeaFilterTags();
 }
 
 // ================================================================
