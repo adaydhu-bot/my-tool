@@ -146,12 +146,18 @@ function setupAuth() {
       // 后台异步加载数据，不阻塞 UI
       try {
         await loadAllData();
+        // 如果云端数据为空，尝试从本地备份恢复
+        await restoreFromLocalBackup();
+        // 加载完成后备份到本地
+        backupTodosToLocal();
+        backupIdeasToLocal();
         initApp(); // 数据加载完后刷新渲染
       } catch (err) {
         console.error('数据加载失败:', err);
       }
       try {
         await carryOverUnfinishedTodos();
+        backupTodosToLocal();
         initApp(); // 顺延完成后再刷新
       } catch (err) {
         console.error('顺延任务处理失败:', err);
@@ -279,6 +285,124 @@ async function loadIdeasFromCloud() {
   } catch (err) {
     console.error('加载灵感异常:', err);
     ideas = [];
+  }
+}
+
+// ========== 本地备份 ==========
+function backupTodosToLocal() {
+  try {
+    localStorage.setItem('todos_backup', JSON.stringify(todos));
+    localStorage.setItem('todos_backup_time', new Date().toISOString());
+  } catch (e) {
+    console.warn('本地备份待办失败:', e);
+  }
+}
+
+function backupIdeasToLocal() {
+  try {
+    localStorage.setItem('ideas_backup', JSON.stringify(ideas));
+    localStorage.setItem('ideas_backup_time', new Date().toISOString());
+  } catch (e) {
+    console.warn('本地备份灵感失败:', e);
+  }
+}
+
+function getLocalTodosBackup() {
+  try {
+    const data = localStorage.getItem('todos_backup');
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getLocalIdeasBackup() {
+  try {
+    const data = localStorage.getItem('ideas_backup');
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 当云端数据为空但本地有备份时，恢复数据到云端
+async function restoreFromLocalBackup() {
+  const localTodos = getLocalTodosBackup();
+  const localIdeas = getLocalIdeasBackup();
+
+  // 检查云端是否为空但本地有数据
+  const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
+  const ideaCount = ideas.length;
+
+  let restored = false;
+
+  // 恢复待办
+  if (todoCount === 0 && localTodos) {
+    const allLocalItems = Object.values(localTodos).flat();
+    if (allLocalItems.length > 0) {
+      console.log(`发现本地备份：${allLocalItems.length} 条待办，正在恢复...`);
+      for (const dateKey of Object.keys(localTodos)) {
+        for (const item of localTodos[dateKey]) {
+          const { data, error } = await _supaClient
+            .from('todos')
+            .insert({
+              user_id: currentUser.id,
+              date: dateKey,
+              text: item.text,
+              priority: item.priority,
+              done: item.done,
+              carried_from: item.carriedFrom || null
+            })
+            .select()
+            .single();
+
+          if (!error && data) {
+            if (!todos[dateKey]) todos[dateKey] = [];
+            todos[dateKey].push({
+              id: data.id,
+              text: data.text,
+              priority: data.priority,
+              done: data.done,
+              createdAt: data.created_at,
+              carriedFrom: data.carried_from || null
+            });
+          }
+        }
+      }
+      restored = true;
+    }
+  }
+
+  // 恢复灵感
+  if (ideaCount === 0 && localIdeas && localIdeas.length > 0) {
+    console.log(`发现本地备份：${localIdeas.length} 条灵感，正在恢复...`);
+    for (const item of localIdeas) {
+      const { data, error } = await _supaClient
+        .from('ideas')
+        .insert({
+          user_id: currentUser.id,
+          text: item.text,
+          tags: item.tags || []
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        ideas.push({
+          id: data.id,
+          text: data.text,
+          tags: data.tags || [],
+          createdAt: data.created_at
+        });
+      }
+    }
+    restored = true;
+  }
+
+  if (restored) {
+    console.log('从本地备份恢复完成！');
+    backupTodosToLocal();
+    backupIdeasToLocal();
   }
 }
 
@@ -524,6 +648,7 @@ async function addTodo() {
   });
 
   input.value = '';
+  backupTodosToLocal();
   renderTodoList();
   renderCalendar();
   updateTodoHeader();
@@ -538,6 +663,7 @@ async function toggleTodo(id) {
   item.done = !item.done;
 
   _supaClient.from('todos').update({ done: item.done }).eq('id', id).then();
+  backupTodosToLocal();
 
   if (wasUndone) {
     const todoEl = document.querySelector(`.todo-item[data-id="${id}"]`);
@@ -662,6 +788,7 @@ async function deleteTodo(id) {
 
   todos[key] = todos[key].filter(t => t.id !== id);
   if (todos[key].length === 0) delete todos[key];
+  backupTodosToLocal();
   renderTodoList();
   updateTodoHeader();
   renderCalendar();
@@ -1003,6 +1130,7 @@ function renderIdeasList() {
     btn.addEventListener('click', async () => {
       await _supaClient.from('ideas').delete().eq('id', btn.dataset.id);
       ideas = ideas.filter(i => i.id !== btn.dataset.id);
+      backupIdeasToLocal();
       renderIdeasList();
       renderIdeaFilterTags();
     });
@@ -1057,6 +1185,7 @@ async function addIdea() {
   input.value = '';
   newIdeaTags = [];
   renderNewIdeaTags();
+  backupIdeasToLocal();
   renderIdeasList();
   renderIdeaFilterTags();
 }
