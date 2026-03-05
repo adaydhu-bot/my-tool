@@ -1,5 +1,5 @@
 ﻿// ================================================================
-// Ada's To Do List - Supabase 云端同步版
+// Ada's To Do List - Supabase 云端同步版 + 全功能增强
 // ================================================================
 
 // ========== Supabase 初始化 ==========
@@ -19,6 +19,23 @@ let currentIdeaTag = 'all';
 let currentIdeaSort = 'newest';
 let newIdeaTags = [];
 let currentUser = null;
+let editingTodoId = null;
+let editingTodoDate = null;
+
+// 拖拽状态
+let draggedItem = null;
+let draggedId = null;
+
+// 喝水提醒状态
+let waterTimerInterval = null;
+let waterSecondsLeft = 30 * 60;
+let waterEnabled = true;
+
+// 待办提醒状态
+let reminderEnabled = false;
+let reminderTime = '09:00';
+let reminderCheckInterval = null;
+let lastReminderDate = null;
 
 // ========== 超时与离线支持 ==========
 function withTimeout(promise, ms = 8000) {
@@ -32,7 +49,6 @@ function tempId() {
   return 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-// 后台重试队列：离线时先存本地，联网后自动同步
 let pendingSyncs = [];
 
 async function processPendingSyncs() {
@@ -53,7 +69,6 @@ async function processPendingSyncs() {
           }).select().single()
         );
         if (!error && data) {
-          // 替换本地临时 ID 为云端真实 ID
           const items = todos[task.date] || [];
           const localItem = items.find(t => t.id === task.localId);
           if (localItem) localItem.id = data.id;
@@ -74,13 +89,11 @@ async function processPendingSyncs() {
         }
       }
     } catch (e) {
-      // 同步再次失败，放回队列
       pendingSyncs.push(task);
     }
   }
 }
 
-// 每 30 秒尝试同步一次待处理的离线数据
 setInterval(processPendingSyncs, 30000);
 
 // ========== 认证模块 ==========
@@ -94,7 +107,6 @@ function setupAuth() {
   const errorEl = document.getElementById('authError');
   let authMode = 'login';
 
-  // Tab 切换 - 使用事件委托
   const tabsContainer = document.querySelector('.auth-tabs');
   if (tabsContainer) {
     tabsContainer.addEventListener('click', (e) => {
@@ -106,14 +118,12 @@ function setupAuth() {
       tab.classList.add('active');
       authMode = tab.dataset.mode;
       submitBtn.textContent = authMode === 'login' ? '登录' : '注册';
-      // 注册模式显示昵称输入框，登录模式隐藏
       nicknameInput.style.display = authMode === 'register' ? 'block' : 'none';
       nicknameInput.required = authMode === 'register';
       errorEl.textContent = '';
     });
   }
 
-  // 提交
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = emailInput.value.trim();
@@ -139,9 +149,7 @@ function setupAuth() {
         result = await _supaClient.auth.signUp({
           email,
           password,
-          options: {
-            data: { nickname: nickname }
-          }
+          options: { data: { nickname } }
         });
       }
 
@@ -156,9 +164,7 @@ function setupAuth() {
       } else if (authMode === 'register' && result.data?.user?.identities?.length === 0) {
         errorEl.textContent = '该邮箱已注册，请直接登录';
       } else if (authMode === 'register' && result.data?.user) {
-        if (result.data.session) {
-          return;
-        }
+        if (result.data.session) return;
         errorEl.style.color = 'var(--success)';
         errorEl.textContent = '注册成功！请检查邮箱点击确认链接后再登录';
       }
@@ -170,23 +176,18 @@ function setupAuth() {
     submitBtn.textContent = authMode === 'login' ? '登录' : '注册';
   });
 
-  // 防止重复初始化
   let appInitialized = false;
 
-  // 监听认证状态
   _supaClient.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
       currentUser = session.user;
       overlay.classList.add('hidden');
       document.getElementById('app').style.display = 'block';
 
-      // TOKEN_REFRESHED 等事件不需要重新初始化
       if (appInitialized && event === 'TOKEN_REFRESHED') return;
 
-      // 启动心跳保活
       startHeartbeat();
 
-      // 显示昵称（如果没有昵称则弹窗让用户补填）
       let nickname = session.user.user_metadata?.nickname;
       if (!nickname) {
         nickname = prompt('欢迎！请输入你的昵称：');
@@ -205,30 +206,34 @@ function setupAuth() {
         if (welcomeEl) welcomeEl.textContent = `Hi ${nickname}，记录每一天，捕捉每个灵感 ✨`;
       }
 
-      // 先初始化界面，让按钮立即可用
       initApp();
       appInitialized = true;
 
-      // 后台异步加载数据，不阻塞 UI
       try {
         await loadAllData();
-        // 如果云端数据为空，尝试从本地备份恢复
         await restoreFromLocalBackup();
-        // 只有有数据时才更新本地备份（防止空数据覆盖好的备份）
         const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
         if (todoCount > 0) backupTodosToLocal();
         if (ideas.length > 0) backupIdeasToLocal();
-        initApp(); // 数据加载完后刷新渲染
+        initApp();
       } catch (err) {
         console.error('数据加载失败:', err);
       }
       try {
         await carryOverUnfinishedTodos();
+        generateRepeatingTodos();
         backupTodosToLocal();
-        initApp(); // 顺延完成后再刷新
+        initApp();
       } catch (err) {
-        console.error('顺延任务处理失败:', err);
+        console.error('顺延/重复任务处理失败:', err);
       }
+
+      // 加载设置
+      loadSettings();
+      // 启动喝水提醒
+      initWaterReminder();
+      // 启动待办提醒
+      initTodoReminder();
     } else {
       currentUser = null;
       appInitialized = false;
@@ -243,19 +248,17 @@ function setupAuth() {
 async function carryOverUnfinishedTodos() {
   const today = todayKey();
   const todayItems = todos[today] || [];
-  // 已经顺延过的任务文本集合（避免重复）
   const carriedTexts = new Set(todayItems.filter(t => t.carriedFrom).map(t => t.text + '|' + t.carriedFrom));
 
   const tasksToCarry = [];
 
-  // 检查过去7天的未完成任务
   for (let i = 1; i <= 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const key = dateKey(d);
     const items = todos[key] || [];
     items.forEach(item => {
-      if (!item.done && !carriedTexts.has(item.text + '|' + key)) {
+      if (!item.done && !item.repeat && !carriedTexts.has(item.text + '|' + key)) {
         tasksToCarry.push({ ...item, originalDate: key });
       }
     });
@@ -263,7 +266,6 @@ async function carryOverUnfinishedTodos() {
 
   if (tasksToCarry.length === 0) return;
 
-  // 批量插入顺延任务到今天
   for (const task of tasksToCarry) {
     try {
       const { data, error } = await withTimeout(
@@ -286,11 +288,13 @@ async function carryOverUnfinishedTodos() {
           priority: data.priority,
           done: data.done,
           createdAt: data.created_at,
-          carriedFrom: data.carried_from
+          carriedFrom: data.carried_from,
+          subtasks: [],
+          repeat: null,
+          order: todos[today].length
         });
       }
     } catch (err) {
-      // 超时则本地顺延
       if (!todos[today]) todos[today] = [];
       todos[today].push({
         id: tempId(),
@@ -298,11 +302,95 @@ async function carryOverUnfinishedTodos() {
         priority: task.priority,
         done: false,
         createdAt: new Date().toISOString(),
-        carriedFrom: task.originalDate
+        carriedFrom: task.originalDate,
+        subtasks: [],
+        repeat: null,
+        order: todos[today].length
       });
-      console.warn('顺延任务超时，已本地添加:', task.text);
     }
   }
+}
+
+// ========== 重复任务生成 ==========
+function generateRepeatingTodos() {
+  const today = todayKey();
+  const todayDate = new Date();
+  const dayOfWeek = todayDate.getDay();
+  const dayOfMonth = todayDate.getDate();
+
+  // 收集所有重复任务模板
+  const repeatTemplates = [];
+  Object.keys(todos).forEach(dk => {
+    (todos[dk] || []).forEach(item => {
+      if (item.repeat) {
+        repeatTemplates.push(item);
+      }
+    });
+  });
+
+  // 去重：同文字同重复类型只保留最新
+  const uniqueRepeats = {};
+  repeatTemplates.forEach(t => {
+    const key = t.text + '|' + JSON.stringify(t.repeat);
+    if (!uniqueRepeats[key] || new Date(t.createdAt) > new Date(uniqueRepeats[key].createdAt)) {
+      uniqueRepeats[key] = t;
+    }
+  });
+
+  const todayItems = todos[today] || [];
+
+  Object.values(uniqueRepeats).forEach(template => {
+    const repeat = template.repeat;
+    let shouldGenerate = false;
+
+    if (repeat.type === 'daily') {
+      shouldGenerate = true;
+    } else if (repeat.type === 'weekly' && dayOfWeek === repeat.value) {
+      shouldGenerate = true;
+    } else if (repeat.type === 'monthly' && dayOfMonth === repeat.value) {
+      shouldGenerate = true;
+    } else if (repeat.type === 'weekdays' && dayOfWeek >= 1 && dayOfWeek <= 5) {
+      shouldGenerate = true;
+    }
+
+    if (shouldGenerate) {
+      const alreadyExists = todayItems.some(t =>
+        t.text === template.text && t.repeat && JSON.stringify(t.repeat) === JSON.stringify(template.repeat)
+      );
+
+      if (!alreadyExists) {
+        if (!todos[today]) todos[today] = [];
+        const newItem = {
+          id: tempId(),
+          text: template.text,
+          priority: template.priority,
+          done: false,
+          createdAt: new Date().toISOString(),
+          carriedFrom: null,
+          subtasks: [],
+          repeat: template.repeat,
+          order: todos[today].length
+        };
+        todos[today].push(newItem);
+
+        // 后台同步到云端
+        if (currentUser) {
+          withTimeout(
+            _supaClient.from('todos').insert({
+              user_id: currentUser.id,
+              date: today,
+              text: newItem.text,
+              priority: newItem.priority,
+              done: false
+            }).select().single(),
+            8000
+          ).then(({ data }) => {
+            if (data) newItem.id = data.id;
+          }).catch(() => {});
+        }
+      }
+    }
+  });
 }
 
 // ========== 云端数据加载 ==========
@@ -329,24 +417,43 @@ async function loadTodosFromCloud() {
     if (data) {
       data.forEach(item => {
         if (!newTodos[item.date]) newTodos[item.date] = [];
-        newTodos[item.date].push({
+        const todoItem = {
           id: item.id,
           text: item.text,
           priority: item.priority,
           done: item.done,
           createdAt: item.created_at,
-          carriedFrom: item.carried_from || null
+          carriedFrom: item.carried_from || null,
+          subtasks: [],
+          repeat: null,
+          order: newTodos[item.date].length
+        };
+        newTodos[item.date].push(todoItem);
+      });
+    }
+
+    // 从本地备份恢复子任务和重复任务信息（云端表没有这些字段）
+    const localBackup = getLocalTodosBackup();
+    if (localBackup) {
+      Object.keys(newTodos).forEach(dk => {
+        const localItems = localBackup[dk] || [];
+        newTodos[dk].forEach(item => {
+          const localItem = localItems.find(li => li.id === item.id || li.text === item.text);
+          if (localItem) {
+            item.subtasks = localItem.subtasks || [];
+            item.repeat = localItem.repeat || null;
+            if (localItem.order !== undefined) item.order = localItem.order;
+          }
         });
       });
     }
+
     todos = newTodos;
   } catch (err) {
     console.error('加载待办超时/异常:', err);
-    // 加载失败尝试从本地备份恢复
     const localTodos = getLocalTodosBackup();
     if (localTodos) {
       todos = localTodos;
-      console.log('已从本地备份加载待办数据');
     }
   }
 }
@@ -379,7 +486,6 @@ async function loadIdeasFromCloud() {
     const localIdeas = getLocalIdeasBackup();
     if (localIdeas) {
       ideas = localIdeas;
-      console.log('已从本地备份加载灵感数据');
     }
   }
 }
@@ -389,54 +495,40 @@ function backupTodosToLocal() {
   try {
     localStorage.setItem('todos_backup', JSON.stringify(todos));
     localStorage.setItem('todos_backup_time', new Date().toISOString());
-  } catch (e) {
-    console.warn('本地备份待办失败:', e);
-  }
+  } catch (e) {}
 }
 
 function backupIdeasToLocal() {
   try {
     localStorage.setItem('ideas_backup', JSON.stringify(ideas));
     localStorage.setItem('ideas_backup_time', new Date().toISOString());
-  } catch (e) {
-    console.warn('本地备份灵感失败:', e);
-  }
+  } catch (e) {}
 }
 
 function getLocalTodosBackup() {
   try {
     const data = localStorage.getItem('todos_backup');
     return data ? JSON.parse(data) : null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 function getLocalIdeasBackup() {
   try {
     const data = localStorage.getItem('ideas_backup');
     return data ? JSON.parse(data) : null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
-// 当云端数据为空但本地有备份时，恢复数据到云端
 async function restoreFromLocalBackup() {
   const localTodos = getLocalTodosBackup();
   const localIdeas = getLocalIdeasBackup();
-
-  // 检查云端是否为空但本地有数据
   const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
   const ideaCount = ideas.length;
-
   let restored = false;
 
-  // 恢复待办
   if (todoCount === 0 && localTodos) {
     const allLocalItems = Object.values(localTodos).flat();
     if (allLocalItems.length > 0) {
-      console.log(`发现本地备份：${allLocalItems.length} 条待办，正在恢复...`);
       for (const dk of Object.keys(localTodos)) {
         for (const item of localTodos[dk]) {
           try {
@@ -460,13 +552,15 @@ async function restoreFromLocalBackup() {
                 priority: data.priority,
                 done: data.done,
                 createdAt: data.created_at,
-                carriedFrom: data.carried_from || null
+                carriedFrom: data.carried_from || null,
+                subtasks: item.subtasks || [],
+                repeat: item.repeat || null,
+                order: todos[dk].length
               });
             }
           } catch (e) {
-            // 超时就直接用本地数据
             if (!todos[dk]) todos[dk] = [];
-            todos[dk].push({ ...item, id: item.id || tempId() });
+            todos[dk].push({ ...item, id: item.id || tempId(), subtasks: item.subtasks || [], repeat: item.repeat || null, order: todos[dk].length });
           }
         }
       }
@@ -474,9 +568,7 @@ async function restoreFromLocalBackup() {
     }
   }
 
-  // 恢复灵感
   if (ideaCount === 0 && localIdeas && localIdeas.length > 0) {
-    console.log(`发现本地备份：${localIdeas.length} 条灵感，正在恢复...`);
     for (const item of localIdeas) {
       try {
         const { data, error } = await withTimeout(
@@ -487,14 +579,8 @@ async function restoreFromLocalBackup() {
           }).select().single(),
           8000
         );
-
         if (!error && data) {
-          ideas.push({
-            id: data.id,
-            text: data.text,
-            tags: data.tags || [],
-            createdAt: data.created_at
-          });
+          ideas.push({ id: data.id, text: data.text, tags: data.tags || [], createdAt: data.created_at });
         }
       } catch (e) {
         ideas.push({ ...item, id: item.id || tempId() });
@@ -504,7 +590,6 @@ async function restoreFromLocalBackup() {
   }
 
   if (restored) {
-    console.log('从本地备份恢复完成！');
     backupTodosToLocal();
     backupIdeasToLocal();
   }
@@ -516,9 +601,7 @@ function dateKey(d) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function todayKey() {
-  return dateKey(new Date());
-}
+function todayKey() { return dateKey(new Date()); }
 
 function formatDate(d) {
   const date = new Date(d);
@@ -532,11 +615,6 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
-}
-
-function formatDateShort(key) {
-  const parts = key.split('-');
-  return `${+parts[1]}/${+parts[2]}`;
 }
 
 function formatCarriedDate(key) {
@@ -566,7 +644,6 @@ function renderCalendar() {
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const daysInPrevMonth = new Date(calYear, calMonth, 0).getDate();
 
-  const today = new Date();
   const selKey = dateKey(selectedDate);
 
   let html = '';
@@ -663,10 +740,11 @@ function renderTodoList() {
     return;
   }
 
-  const priorityOrder = { high: 0, mid: 1, low: 2 };
-  items.sort((a, b) => {
-    if (a.done !== b.done) return a.done ? 1 : -1;
-    return priorityOrder[a.priority] - priorityOrder[b.priority];
+  // 按 order 排序（拖拽排序）
+  items = [...items].sort((a, b) => {
+    const orderA = a.order !== undefined ? a.order : 999;
+    const orderB = b.order !== undefined ? b.order : 999;
+    return orderA - orderB;
   });
 
   listEl.innerHTML = items.map(item => {
@@ -678,29 +756,297 @@ function renderTodoList() {
       carryClass = ` carried ${days >= 3 ? 'carry-danger' : ''}`;
       carriedBadge = `<span class="carried-badge ${level}">顺延${days}天<span class="carried-date">原定${formatCarriedDate(item.carriedFrom)}</span></span>`;
     }
+
+    let repeatBadge = '';
+    if (item.repeat) {
+      const labels = { daily: '每天', weekly: '每周', monthly: '每月', weekdays: '工作日' };
+      repeatBadge = `<span class="repeat-badge">🔁 ${labels[item.repeat.type] || '重复'}</span>`;
+    }
+
+    // 子任务渲染
+    let subtasksHtml = '';
+    const subtasks = item.subtasks || [];
+    if (subtasks.length > 0) {
+      subtasksHtml = `<div class="subtask-list">`;
+      subtasksHtml += subtasks.map((st, si) => `
+        <div class="subtask-item${st.done ? ' done' : ''}">
+          <button class="subtask-checkbox${st.done ? ' checked' : ''}" data-parent-id="${item.id}" data-sub-index="${si}">${st.done ? '✓' : ''}</button>
+          <span class="subtask-text">${escapeHtml(st.text)}</span>
+          <button class="subtask-delete" data-parent-id="${item.id}" data-sub-index="${si}">✕</button>
+        </div>
+      `).join('');
+      subtasksHtml += `</div>`;
+    }
+
+    // 添加子任务入口
+    subtasksHtml += `
+      <div class="add-subtask" data-parent-id="${item.id}" style="display:none;">
+        <input type="text" placeholder="添加子任务..." maxlength="30" data-parent-id="${item.id}">
+        <button data-parent-id="${item.id}">添加</button>
+      </div>
+      <button class="toggle-subtask-btn" data-parent-id="${item.id}">+ 子任务</button>
+    `;
+
     return `
-      <div class="todo-item priority-${item.priority}${item.done ? ' completed' : ''}${carryClass}" data-id="${item.id}">
+      <div class="todo-item priority-${item.priority}${item.done ? ' completed' : ''}${carryClass}" data-id="${item.id}" draggable="true">
         ${carriedBadge}
         <button class="todo-checkbox${item.done ? ' checked' : ''}" data-id="${item.id}">${item.done ? '✓' : ''}</button>
         <div class="todo-info">
-          <div class="todo-text">${escapeHtml(item.text)}</div>
+          <div class="todo-text" data-id="${item.id}">${escapeHtml(item.text)}${repeatBadge}</div>
+          ${subtasksHtml}
         </div>
         <button class="todo-delete" data-id="${item.id}" title="删除">✕</button>
       </div>
     `;
   }).join('');
 
-  listEl.querySelectorAll('.todo-checkbox').forEach(btn => {
-    btn.addEventListener('click', () => toggleTodo(btn.dataset.id));
-  });
-
-  listEl.querySelectorAll('.todo-delete').forEach(btn => {
-    btn.addEventListener('click', () => deleteTodo(btn.dataset.id));
-  });
-
+  // 绑定事件
+  bindTodoEvents(listEl);
   updateProgressBar();
 }
 
+function bindTodoEvents(listEl) {
+  // 完成切换
+  listEl.querySelectorAll('.todo-checkbox').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTodo(btn.dataset.id);
+    });
+  });
+
+  // 删除
+  listEl.querySelectorAll('.todo-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteTodo(btn.dataset.id);
+    });
+  });
+
+  // 点击文字编辑
+  listEl.querySelectorAll('.todo-text').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditDialog(el.dataset.id);
+    });
+  });
+
+  // 子任务相关事件
+  listEl.querySelectorAll('.subtask-checkbox').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSubtask(btn.dataset.parentId, +btn.dataset.subIndex);
+    });
+  });
+
+  listEl.querySelectorAll('.subtask-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteSubtask(btn.dataset.parentId, +btn.dataset.subIndex);
+    });
+  });
+
+  listEl.querySelectorAll('.toggle-subtask-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const addRow = listEl.querySelector(`.add-subtask[data-parent-id="${btn.dataset.parentId}"]`);
+      if (addRow) {
+        const isVisible = addRow.style.display !== 'none';
+        addRow.style.display = isVisible ? 'none' : 'flex';
+        if (!isVisible) addRow.querySelector('input').focus();
+      }
+    });
+  });
+
+  listEl.querySelectorAll('.add-subtask button').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addSubtask(btn.dataset.parentId);
+    });
+  });
+
+  listEl.querySelectorAll('.add-subtask input').forEach(input => {
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.stopPropagation();
+        addSubtask(input.dataset.parentId);
+      }
+    });
+  });
+
+  // 拖拽排序
+  listEl.querySelectorAll('.todo-item[draggable="true"]').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = item;
+      draggedId = item.dataset.id;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      listEl.querySelectorAll('.todo-item').forEach(el => el.classList.remove('drag-over'));
+      draggedItem = null;
+      draggedId = null;
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (item !== draggedItem) {
+        listEl.querySelectorAll('.todo-item').forEach(el => el.classList.remove('drag-over'));
+        item.classList.add('drag-over');
+      }
+    });
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over');
+    });
+
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if (!draggedId || item.dataset.id === draggedId) return;
+
+      const key = dateKey(selectedDate);
+      const allItems = todos[key] || [];
+      const fromIndex = allItems.findIndex(t => t.id === draggedId);
+      const toIndex = allItems.findIndex(t => t.id === item.dataset.id);
+
+      if (fromIndex === -1 || toIndex === -1) return;
+
+      const [moved] = allItems.splice(fromIndex, 1);
+      allItems.splice(toIndex, 0, moved);
+
+      // 更新 order
+      allItems.forEach((t, i) => t.order = i);
+
+      backupTodosToLocal();
+      renderTodoList();
+    });
+  });
+}
+
+// ========== 编辑待办 ==========
+function openEditDialog(id) {
+  const key = dateKey(selectedDate);
+  const item = (todos[key] || []).find(t => t.id === id);
+  if (!item) return;
+
+  editingTodoId = id;
+  editingTodoDate = key;
+
+  document.getElementById('editTodoText').value = item.text;
+
+  const dots = document.querySelectorAll('#editPriorityDots .dot-btn');
+  dots.forEach(d => d.classList.remove('selected'));
+  const target = document.querySelector(`#editPriorityDots .dot-btn[data-priority="${item.priority}"]`);
+  if (target) target.classList.add('selected');
+
+  const overlay = document.getElementById('editOverlay');
+  overlay.style.display = 'flex';
+  overlay.classList.add('show');
+  document.getElementById('editTodoText').focus();
+}
+
+function closeEditDialog() {
+  const overlay = document.getElementById('editOverlay');
+  overlay.classList.remove('show');
+  overlay.style.display = 'none';
+  editingTodoId = null;
+  editingTodoDate = null;
+}
+
+function saveEdit() {
+  if (!editingTodoId || !editingTodoDate) return;
+
+  const text = document.getElementById('editTodoText').value.trim();
+  if (!text) return;
+
+  const selectedDot = document.querySelector('#editPriorityDots .dot-btn.selected');
+  const priority = selectedDot ? selectedDot.dataset.priority : 'mid';
+
+  const items = todos[editingTodoDate] || [];
+  const item = items.find(t => t.id === editingTodoId);
+  if (!item) return;
+
+  item.text = text;
+  item.priority = priority;
+
+  // 云端更新（不阻塞）
+  if (!editingTodoId.startsWith('local_')) {
+    withTimeout(
+      _supaClient.from('todos').update({ text, priority }).eq('id', editingTodoId),
+      8000
+    ).catch(e => console.warn('编辑同步失败:', e));
+  }
+
+  backupTodosToLocal();
+  renderTodoList();
+  updateTodoHeader();
+  closeEditDialog();
+}
+
+// ========== 子任务 ==========
+function addSubtask(parentId) {
+  const key = dateKey(selectedDate);
+  const item = (todos[key] || []).find(t => t.id === parentId);
+  if (!item) return;
+
+  const input = document.querySelector(`.add-subtask[data-parent-id="${parentId}"] input`);
+  const text = input ? input.value.trim() : '';
+  if (!text) return;
+
+  if (!item.subtasks) item.subtasks = [];
+  item.subtasks.push({ text, done: false });
+
+  if (input) input.value = '';
+  backupTodosToLocal();
+  renderTodoList();
+  updateTodoHeader();
+}
+
+function toggleSubtask(parentId, subIndex) {
+  const key = dateKey(selectedDate);
+  const item = (todos[key] || []).find(t => t.id === parentId);
+  if (!item || !item.subtasks || !item.subtasks[subIndex]) return;
+
+  item.subtasks[subIndex].done = !item.subtasks[subIndex].done;
+
+  // 检查所有子任务是否全部完成 -> 自动标记父任务完成
+  if (item.subtasks.length > 0 && item.subtasks.every(st => st.done)) {
+    if (!item.done) {
+      item.done = true;
+      // 云端更新
+      if (!parentId.startsWith('local_')) {
+        withTimeout(_supaClient.from('todos').update({ done: true }).eq('id', parentId), 8000)
+          .catch(() => {});
+      }
+    }
+  }
+
+  backupTodosToLocal();
+  renderTodoList();
+  updateTodoHeader();
+  renderCalendar();
+
+  // 检查全部完成
+  const allItems = getTodosForDate(key);
+  if (allItems.length > 0 && allItems.every(t => t.done)) {
+    setTimeout(() => showCompletionOverlay(), 300);
+  }
+}
+
+function deleteSubtask(parentId, subIndex) {
+  const key = dateKey(selectedDate);
+  const item = (todos[key] || []).find(t => t.id === parentId);
+  if (!item || !item.subtasks) return;
+
+  item.subtasks.splice(subIndex, 1);
+  backupTodosToLocal();
+  renderTodoList();
+}
+
+// ========== 添加待办 ==========
 function getSelectedPriority() {
   const selected = document.querySelector('#priorityDots .dot-btn.selected');
   return selected ? selected.dataset.priority : 'mid';
@@ -716,10 +1062,7 @@ async function addTodo() {
   const priority = getSelectedPriority();
   const text = input.value.trim();
 
-  if (!text) {
-    input.focus();
-    return;
-  }
+  if (!text) { input.focus(); return; }
 
   if (!currentUser) {
     alert('正在加载用户数据，请稍等几秒再试');
@@ -731,6 +1074,19 @@ async function addTodo() {
   addBtn.textContent = '添加中...';
 
   const key = dateKey(selectedDate);
+
+  // 重复任务信息
+  let repeat = null;
+  const repeatToggle = document.getElementById('repeatToggle');
+  if (repeatToggle && repeatToggle.checked) {
+    const repeatType = document.getElementById('repeatType').value;
+    repeat = { type: repeatType };
+    if (repeatType === 'weekly') {
+      repeat.value = +document.getElementById('repeatWeekday').value;
+    } else if (repeatType === 'monthly') {
+      repeat.value = +document.getElementById('repeatMonthday').value;
+    }
+  }
 
   try {
     const { data, error } = await withTimeout(
@@ -744,9 +1100,7 @@ async function addTodo() {
     );
 
     if (error) {
-      console.error('添加失败:', error);
-      // 云端失败，降级到本地
-      addTodoLocally(key, text, priority);
+      addTodoLocally(key, text, priority, repeat);
     } else {
       if (!todos[key]) todos[key] = [];
       todos[key].push({
@@ -755,16 +1109,23 @@ async function addTodo() {
         priority: data.priority,
         done: data.done,
         createdAt: data.created_at,
-        carriedFrom: data.carried_from || null
+        carriedFrom: data.carried_from || null,
+        subtasks: [],
+        repeat,
+        order: todos[key].length
       });
     }
   } catch (err) {
-    console.error('添加待办超时/异常:', err);
-    // 超时或网络错误，降级到本地
-    addTodoLocally(key, text, priority);
+    addTodoLocally(key, text, priority, repeat);
   }
 
   input.value = '';
+  // 重置重复任务选项
+  if (repeatToggle) {
+    repeatToggle.checked = false;
+    document.getElementById('repeatOptions').style.display = 'none';
+  }
+
   backupTodosToLocal();
   renderTodoList();
   renderCalendar();
@@ -775,7 +1136,7 @@ async function addTodo() {
   addBtn.textContent = '添加';
 }
 
-function addTodoLocally(key, text, priority) {
+function addTodoLocally(key, text, priority, repeat) {
   const localId = tempId();
   if (!todos[key]) todos[key] = [];
   todos[key].push({
@@ -784,11 +1145,12 @@ function addTodoLocally(key, text, priority) {
     priority,
     done: false,
     createdAt: new Date().toISOString(),
-    carriedFrom: null
+    carriedFrom: null,
+    subtasks: [],
+    repeat,
+    order: todos[key].length
   });
-  // 加入后台同步队列
   pendingSyncs.push({ type: 'add_todo', localId, date: key, text, priority, done: false });
-  console.log('已离线添加待办，等待后台同步');
 }
 
 async function toggleTodo(id) {
@@ -799,9 +1161,8 @@ async function toggleTodo(id) {
   const wasUndone = !item.done;
   item.done = !item.done;
 
-  // 云端更新加超时，不阻塞
   withTimeout(_supaClient.from('todos').update({ done: item.done }).eq('id', id), 8000)
-    .catch(e => console.warn('更新完成状态超时，本地已保存:', e));
+    .catch(e => console.warn('更新完成状态超时:', e));
   backupTodosToLocal();
 
   if (wasUndone) {
@@ -849,15 +1210,13 @@ function spawnConfetti(todoEl) {
   }
 
   todoEl.appendChild(container);
-
   requestAnimationFrame(() => {
     container.querySelectorAll('.confetti').forEach(c => c.classList.add('burst'));
   });
-
   setTimeout(() => container.remove(), 1000);
 }
 
-// ========== 进度条更新 ==========
+// ========== 进度条 ==========
 function updateProgressBar() {
   const key = dateKey(selectedDate);
   const allItems = getTodosForDate(key);
@@ -876,9 +1235,7 @@ function updateProgressBar() {
   doneEl.textContent = done;
   totalEl.textContent = allItems.length;
   const pct = Math.round(done / allItems.length * 100);
-  requestAnimationFrame(() => {
-    fill.style.width = pct + '%';
-  });
+  requestAnimationFrame(() => { fill.style.width = pct + '%'; });
 }
 
 // ========== 全部完成弹窗 ==========
@@ -897,7 +1254,7 @@ function hideCompletionOverlay() {
 
 function spawnOverlayConfetti() {
   const overlay = document.getElementById('completionOverlay');
-  const colors = ['#FF6B6B', '#FFD166', '#6BCB77', '#FF8C42', '#A78BFA', '#F472B6', '#38BDF8', '#FBBF24', '#FF8C42', '#FFB07A'];
+  const colors = ['#FF6B6B', '#FFD166', '#6BCB77', '#FF8C42', '#A78BFA', '#F472B6', '#38BDF8', '#FBBF24'];
 
   for (let i = 0; i < 30; i++) {
     const dot = document.createElement('div');
@@ -923,15 +1280,15 @@ async function deleteTodo(id) {
   const key = dateKey(selectedDate);
   if (!todos[key]) return;
 
-  // 先更新本地，再尝试云端删除（不阻塞）
   todos[key] = todos[key].filter(t => t.id !== id);
   if (todos[key].length === 0) delete todos[key];
+  // 重新排序
+  if (todos[key]) todos[key].forEach((t, i) => t.order = i);
   backupTodosToLocal();
   renderTodoList();
   updateTodoHeader();
   renderCalendar();
 
-  // 云端删除加超时，不阻塞 UI
   if (!id.startsWith('local_')) {
     withTimeout(_supaClient.from('todos').delete().eq('id', id), 8000)
       .catch(e => console.warn('云端删除超时:', e));
@@ -1040,10 +1397,15 @@ function drawBarChart(labels, data) {
   const chartH = H - padding.top - padding.bottom;
 
   ctx.clearRect(0, 0, W, H);
-
   const maxVal = Math.max(...data, 1);
 
-  ctx.strokeStyle = '#F0E6DD';
+  const style = getComputedStyle(document.documentElement);
+  const borderColor = style.getPropertyValue('--border').trim() || '#F0E6DD';
+  const textLight = style.getPropertyValue('--text-light').trim() || '#A08B7A';
+  const primary = style.getPropertyValue('--primary').trim() || '#FF8C42';
+  const secondary = style.getPropertyValue('--secondary').trim() || '#FFD166';
+
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = padding.top + chartH - (chartH / 4) * i;
@@ -1052,7 +1414,7 @@ function drawBarChart(labels, data) {
     ctx.lineTo(W - padding.right, y);
     ctx.stroke();
 
-    ctx.fillStyle = '#A08B7A';
+    ctx.fillStyle = textLight;
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -1071,8 +1433,8 @@ function drawBarChart(labels, data) {
     const y = padding.top + chartH - barH;
 
     const grad = ctx.createLinearGradient(0, y, 0, padding.top + chartH);
-    grad.addColorStop(0, '#FF8C42');
-    grad.addColorStop(1, '#FFD166');
+    grad.addColorStop(0, primary);
+    grad.addColorStop(1, secondary);
     ctx.fillStyle = grad;
 
     const r = Math.min(4, barWidth / 2);
@@ -1086,7 +1448,7 @@ function drawBarChart(labels, data) {
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.fill();
 
-    ctx.fillStyle = '#A08B7A';
+    ctx.fillStyle = textLight;
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -1109,6 +1471,9 @@ function drawPieChart(priorityCounts) {
   const H = 220;
   ctx.clearRect(0, 0, W, H);
 
+  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#4A3728';
+  const textLight = getComputedStyle(document.documentElement).getPropertyValue('--text-light').trim() || '#A08B7A';
+
   const data = [
     { label: '高优先级', value: priorityCounts.high, color: '#FF6B6B' },
     { label: '中优先级', value: priorityCounts.mid, color: '#FFD166' },
@@ -1118,7 +1483,7 @@ function drawPieChart(priorityCounts) {
   const total = data.reduce((s, d) => s + d.value, 0);
 
   if (total === 0) {
-    ctx.fillStyle = '#A08B7A';
+    ctx.fillStyle = textLight;
     ctx.font = '14px "Microsoft YaHei", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1148,9 +1513,9 @@ function drawPieChart(priorityCounts) {
 
   ctx.beginPath();
   ctx.arc(cx, cy, 40, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || '#fff';
   ctx.fill();
-  ctx.fillStyle = '#4A3728';
+  ctx.fillStyle = textColor;
   ctx.font = 'bold 16px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -1164,7 +1529,7 @@ function drawPieChart(priorityCounts) {
     ctx.arc(legendX, legendY + 6, 5, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#4A3728';
+    ctx.fillStyle = textColor;
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -1235,7 +1600,6 @@ function renderIdeaFilterTags() {
 
 function renderIdeasList() {
   const listEl = document.getElementById('ideasList');
-
   let filtered = [...ideas];
 
   if (currentIdeaTag !== 'all') {
@@ -1277,7 +1641,6 @@ function renderIdeasList() {
       backupIdeasToLocal();
       renderIdeasList();
       renderIdeaFilterTags();
-      // 云端删除不阻塞
       if (!deleteId.startsWith('local_')) {
         withTimeout(_supaClient.from('ideas').delete().eq('id', deleteId), 8000)
           .catch(e => console.warn('云端删除灵感超时:', e));
@@ -1310,10 +1673,7 @@ async function addIdea() {
   const text = input.value.trim();
   const tags = [...newIdeaTags];
 
-  if (!text) {
-    input.focus();
-    return;
-  }
+  if (!text) { input.focus(); return; }
 
   isAddingIdea = true;
   addBtn.disabled = true;
@@ -1329,7 +1689,6 @@ async function addIdea() {
     );
 
     if (error) {
-      console.error('添加灵感失败:', error);
       addIdeaLocally(text, tags);
     } else {
       ideas.push({
@@ -1340,7 +1699,6 @@ async function addIdea() {
       });
     }
   } catch (err) {
-    console.error('添加灵感超时/异常:', err);
     addIdeaLocally(text, tags);
   }
 
@@ -1365,26 +1723,251 @@ function addIdeaLocally(text, tags) {
     createdAt: new Date().toISOString()
   });
   pendingSyncs.push({ type: 'add_idea', localId, text, tags });
-  console.log('已离线添加灵感，等待后台同步');
 }
 
 // ================================================================
-// 心跳保活：防止 Supabase 数据库因不活跃被暂停
+// 模块四：主题切换
+// ================================================================
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('todo_theme', theme);
+
+  // 更新主题按钮状态
+  document.querySelectorAll('#themeOptions .theme-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.theme === theme);
+  });
+}
+
+function loadTheme() {
+  const autoTheme = localStorage.getItem('todo_auto_theme') === 'true';
+  const savedTheme = localStorage.getItem('todo_theme') || 'orange';
+
+  const autoToggle = document.getElementById('autoThemeToggle');
+  if (autoToggle) autoToggle.checked = autoTheme;
+
+  if (autoTheme) {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(prefersDark ? 'dark' : savedTheme === 'dark' ? 'orange' : savedTheme);
+  } else {
+    applyTheme(savedTheme);
+  }
+}
+
+// ================================================================
+// 模块五：喝水提醒
+// ================================================================
+
+function initWaterReminder() {
+  const saved = localStorage.getItem('todo_water_enabled');
+  waterEnabled = saved === null ? true : saved === 'true';
+
+  const checkbox = document.getElementById('waterEnabled');
+  if (checkbox) checkbox.checked = waterEnabled;
+
+  const waterEl = document.getElementById('waterReminder');
+  if (!waterEnabled) {
+    waterEl.classList.add('hidden');
+    stopWaterTimer();
+    return;
+  }
+
+  waterEl.classList.remove('hidden');
+  startWaterTimer();
+}
+
+function startWaterTimer() {
+  stopWaterTimer();
+  waterSecondsLeft = 30 * 60;
+  updateWaterDisplay();
+
+  waterTimerInterval = setInterval(() => {
+    waterSecondsLeft--;
+    if (waterSecondsLeft <= 0) {
+      waterSecondsLeft = 0;
+      showWaterReminder();
+      stopWaterTimer();
+    }
+    updateWaterDisplay();
+  }, 1000);
+}
+
+function stopWaterTimer() {
+  if (waterTimerInterval) {
+    clearInterval(waterTimerInterval);
+    waterTimerInterval = null;
+  }
+}
+
+function updateWaterDisplay() {
+  const timerEl = document.getElementById('waterTimer');
+  const fillEl = document.getElementById('waterFill');
+
+  if (timerEl) {
+    const mins = Math.floor(waterSecondsLeft / 60);
+    const secs = waterSecondsLeft % 60;
+    timerEl.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  if (fillEl) {
+    // 从底部填充：总高度80，水滴路径约从y=5到y=78
+    // elapsed比例越大，水越满
+    const elapsed = 1 - (waterSecondsLeft / (30 * 60));
+    const maxFillHeight = 73; // 水滴内部可填充高度
+    const yStart = 78 - elapsed * maxFillHeight;
+    fillEl.setAttribute('y', yStart);
+  }
+
+  // 最后2分钟水滴晃动
+  const waterEl = document.getElementById('waterReminder');
+  if (waterEl) {
+    if (waterSecondsLeft <= 120 && waterSecondsLeft > 0) {
+      if (waterSecondsLeft % 10 === 0) {
+        waterEl.classList.add('shake');
+        setTimeout(() => waterEl.classList.remove('shake'), 1500);
+      }
+    }
+  }
+}
+
+function showWaterReminder() {
+  const overlay = document.getElementById('waterOverlay');
+  overlay.style.display = 'flex';
+  overlay.classList.add('show');
+
+  // 水滴晃动
+  const waterEl = document.getElementById('waterReminder');
+  if (waterEl) {
+    waterEl.classList.add('shake');
+  }
+}
+
+function hideWaterReminder() {
+  const overlay = document.getElementById('waterOverlay');
+  overlay.classList.remove('show');
+  overlay.style.display = 'none';
+
+  const waterEl = document.getElementById('waterReminder');
+  if (waterEl) waterEl.classList.remove('shake');
+
+  // 重置计时器
+  startWaterTimer();
+}
+
+// ================================================================
+// 模块六：待办提醒
+// ================================================================
+
+function initTodoReminder() {
+  reminderEnabled = localStorage.getItem('todo_reminder_enabled') === 'true';
+  reminderTime = localStorage.getItem('todo_reminder_time') || '09:00';
+  lastReminderDate = localStorage.getItem('todo_last_reminder_date');
+
+  const checkbox = document.getElementById('reminderEnabled');
+  const timeInput = document.getElementById('reminderTime');
+  const timeRow = document.getElementById('reminderTimeRow');
+
+  if (checkbox) checkbox.checked = reminderEnabled;
+  if (timeInput) timeInput.value = reminderTime;
+  if (timeRow) timeRow.style.display = reminderEnabled ? 'flex' : 'none';
+
+  // 每分钟检查一次是否到了提醒时间
+  if (reminderCheckInterval) clearInterval(reminderCheckInterval);
+  reminderCheckInterval = setInterval(checkTodoReminder, 60000);
+  // 立即检查一次
+  checkTodoReminder();
+}
+
+function checkTodoReminder() {
+  if (!reminderEnabled) return;
+
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const todayStr = todayKey();
+
+  // 今天已经提醒过了
+  if (lastReminderDate === todayStr) return;
+
+  // 到了提醒时间
+  if (currentTime === reminderTime) {
+    const todayItems = getTodosForDate(todayStr);
+    const undone = todayItems.filter(t => !t.done);
+
+    if (undone.length > 0) {
+      showTodoReminder(undone);
+      lastReminderDate = todayStr;
+      localStorage.setItem('todo_last_reminder_date', todayStr);
+    }
+  }
+}
+
+function showTodoReminder(undoneTodos) {
+  const listEl = document.getElementById('reminderList');
+  listEl.innerHTML = undoneTodos.map(t => {
+    const dotColor = t.priority === 'high' ? '#FF6B6B' : t.priority === 'mid' ? '#FFD166' : '#6BCB77';
+    return `<div class="reminder-item"><span class="ri-dot" style="background:${dotColor}"></span>${escapeHtml(t.text)}</div>`;
+  }).join('');
+
+  const overlay = document.getElementById('reminderOverlay');
+  overlay.style.display = 'flex';
+  overlay.classList.add('show');
+}
+
+function hideTodoReminder() {
+  const overlay = document.getElementById('reminderOverlay');
+  overlay.classList.remove('show');
+  overlay.style.display = 'none';
+}
+
+// ================================================================
+// 模块七：设置管理
+// ================================================================
+
+function loadSettings() {
+  loadTheme();
+}
+
+function saveSettings() {
+  // 主题
+  const autoTheme = document.getElementById('autoThemeToggle')?.checked || false;
+  localStorage.setItem('todo_auto_theme', autoTheme);
+
+  // 提醒
+  reminderEnabled = document.getElementById('reminderEnabled')?.checked || false;
+  reminderTime = document.getElementById('reminderTime')?.value || '09:00';
+  localStorage.setItem('todo_reminder_enabled', reminderEnabled);
+  localStorage.setItem('todo_reminder_time', reminderTime);
+
+  const timeRow = document.getElementById('reminderTimeRow');
+  if (timeRow) timeRow.style.display = reminderEnabled ? 'flex' : 'none';
+
+  // 喝水
+  waterEnabled = document.getElementById('waterEnabled')?.checked || false;
+  localStorage.setItem('todo_water_enabled', waterEnabled);
+
+  const waterEl = document.getElementById('waterReminder');
+  if (waterEnabled) {
+    waterEl.classList.remove('hidden');
+    startWaterTimer();
+  } else {
+    waterEl.classList.add('hidden');
+    stopWaterTimer();
+  }
+}
+
+// ================================================================
+// 心跳保活
 // ================================================================
 let heartbeatTimer = null;
 
 function startHeartbeat() {
   if (heartbeatTimer) return;
-  // 每 4 小时发一次轻量查询，保持数据库活跃
   heartbeatTimer = setInterval(async () => {
     if (!currentUser) return;
     try {
       await withTimeout(_supaClient.from('todos').select('id').limit(1), 10000);
-      console.log('心跳保活: OK', new Date().toLocaleTimeString());
-    } catch (e) {
-      console.warn('心跳保活失败:', e);
-    }
-  }, 4 * 60 * 60 * 1000); // 4小时
+    } catch (e) {}
+  }, 4 * 60 * 60 * 1000);
 }
 
 function stopHeartbeat() {
@@ -1395,7 +1978,7 @@ function stopHeartbeat() {
 }
 
 // ================================================================
-// 初始化渲染（仅渲染，不绑定事件）
+// 初始化
 // ================================================================
 function initApp() {
   const now = new Date();
@@ -1411,7 +1994,7 @@ function initApp() {
 }
 
 // ================================================================
-// 页面加载后立即绑定所有事件（不依赖 Supabase）
+// 事件绑定
 // ================================================================
 document.addEventListener('DOMContentLoaded', () => {
   // Tab 切换
@@ -1423,9 +2006,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const section = document.getElementById(btn.dataset.tab + 'Section');
       if (section) section.classList.add('active');
 
-      if (btn.dataset.tab === 'summary') {
-        renderSummary();
-      }
+      if (btn.dataset.tab === 'summary') renderSummary();
     });
   });
 
@@ -1465,10 +2046,67 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.classList.add('selected');
   });
 
+  // 重复任务切换
+  const repeatToggle = document.getElementById('repeatToggle');
+  if (repeatToggle) {
+    repeatToggle.addEventListener('change', () => {
+      document.getElementById('repeatOptions').style.display = repeatToggle.checked ? 'flex' : 'none';
+    });
+  }
+
+  const repeatType = document.getElementById('repeatType');
+  if (repeatType) {
+    repeatType.addEventListener('change', () => {
+      document.getElementById('repeatWeekday').style.display = repeatType.value === 'weekly' ? 'inline-block' : 'none';
+      document.getElementById('repeatMonthday').style.display = repeatType.value === 'monthly' ? 'inline-block' : 'none';
+    });
+  }
+
+  // 填充月份日期选项
+  const monthDaySelect = document.getElementById('repeatMonthday');
+  if (monthDaySelect) {
+    for (let i = 1; i <= 31; i++) {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${i}号`;
+      monthDaySelect.appendChild(opt);
+    }
+  }
+
   // 全部完成弹窗关闭
   document.getElementById('completionCloseBtn').addEventListener('click', hideCompletionOverlay);
   document.getElementById('completionOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideCompletionOverlay();
+  });
+
+  // 喝水提醒弹窗关闭
+  document.getElementById('waterCloseBtn').addEventListener('click', hideWaterReminder);
+  document.getElementById('waterOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideWaterReminder();
+  });
+
+  // 待办提醒弹窗关闭
+  document.getElementById('reminderCloseBtn').addEventListener('click', hideTodoReminder);
+  document.getElementById('reminderOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideTodoReminder();
+  });
+
+  // 编辑弹窗
+  document.getElementById('editCancelBtn').addEventListener('click', closeEditDialog);
+  document.getElementById('editSaveBtn').addEventListener('click', saveEdit);
+  document.getElementById('editOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeEditDialog();
+  });
+  document.getElementById('editTodoText').addEventListener('keypress', e => {
+    if (e.key === 'Enter') saveEdit();
+  });
+
+  // 编辑弹窗优先级切换
+  document.getElementById('editPriorityDots').addEventListener('click', e => {
+    const btn = e.target.closest('.dot-btn');
+    if (!btn) return;
+    document.querySelectorAll('#editPriorityDots .dot-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
   });
 
   // 待办筛选
@@ -1494,7 +2132,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // 添加灵感
   document.getElementById('addIdeaBtn').addEventListener('click', addIdea);
 
-  // 灵感标签输入
   document.getElementById('ideaTagInput').addEventListener('keypress', e => {
     if (e.key === 'Enter') {
       const input = e.target;
@@ -1507,11 +2144,63 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 灵感排序
   document.getElementById('ideaSortSelect').addEventListener('change', e => {
     currentIdeaSort = e.target.value;
     renderIdeasList();
   });
+
+  // 主题切换
+  document.querySelectorAll('#themeOptions .theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      applyTheme(btn.dataset.theme);
+    });
+  });
+
+  // 自动主题切换
+  const autoThemeToggle = document.getElementById('autoThemeToggle');
+  if (autoThemeToggle) {
+    autoThemeToggle.addEventListener('change', () => {
+      localStorage.setItem('todo_auto_theme', autoThemeToggle.checked);
+      if (autoThemeToggle.checked) {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) applyTheme('dark');
+      }
+    });
+  }
+
+  // 监听系统主题变化
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+    const autoTheme = localStorage.getItem('todo_auto_theme') === 'true';
+    if (autoTheme) {
+      applyTheme(e.matches ? 'dark' : (localStorage.getItem('todo_theme_light') || 'orange'));
+    }
+  });
+
+  // 设置变更
+  const reminderEnabledEl = document.getElementById('reminderEnabled');
+  if (reminderEnabledEl) {
+    reminderEnabledEl.addEventListener('change', saveSettings);
+  }
+
+  const reminderTimeEl = document.getElementById('reminderTime');
+  if (reminderTimeEl) {
+    reminderTimeEl.addEventListener('change', saveSettings);
+  }
+
+  const waterEnabledEl = document.getElementById('waterEnabled');
+  if (waterEnabledEl) {
+    waterEnabledEl.addEventListener('change', saveSettings);
+  }
+
+  // 点击水滴也能手动触发喝水提醒
+  const waterReminder = document.getElementById('waterReminder');
+  if (waterReminder) {
+    waterReminder.addEventListener('click', () => {
+      if (waterSecondsLeft <= 0) {
+        showWaterReminder();
+      }
+    });
+  }
 
   // 窗口大小变化时重绘图表
   window.addEventListener('resize', () => {
@@ -1536,6 +2225,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateClock();
   setInterval(updateClock, 1000);
 
-  // 启动认证（必须在事件绑定之后）
+  // 加载主题（在登录前就应用）
+  loadTheme();
+
+  // 启动认证
   setupAuth();
 });

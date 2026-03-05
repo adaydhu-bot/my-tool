@@ -36,6 +36,24 @@
       <span class="clock-date" id="clockDate"></span>
     </div>
 
+    <!-- 喝水提醒水滴 -->
+    <div class="water-reminder" id="waterReminder" title="喝水提醒">
+      <svg class="water-drop" viewBox="0 0 60 80" width="36" height="48">
+        <defs>
+          <clipPath id="dropClip">
+            <path d="M30 5 Q30 5 15 40 Q5 55 15 68 Q22 78 30 78 Q38 78 45 68 Q55 55 45 40 Q30 5 30 5Z"/>
+          </clipPath>
+          <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#64B5F6"/>
+            <stop offset="100%" stop-color="#1E88E5"/>
+          </linearGradient>
+        </defs>
+        <path class="drop-outline" d="M30 5 Q30 5 15 40 Q5 55 15 68 Q22 78 30 78 Q38 78 45 68 Q55 55 45 40 Q30 5 30 5Z" fill="none" stroke="#B0D4F1" stroke-width="2"/>
+        <rect class="water-fill" id="waterFill" clip-path="url(#dropClip)" x="0" y="80" width="60" height="80" fill="url(#waterGrad)"/>
+      </svg>
+      <span class="water-timer" id="waterTimer">30:00</span>
+    </div>
+
     <!-- 头部 -->
     <header class="header">
       <h1 id="appTitle">To Do List</h1>
@@ -47,6 +65,7 @@
       <button class="tab-btn active" data-tab="todo">📝 每日待办</button>
       <button class="tab-btn" data-tab="ideas">💡 灵感记录</button>
       <button class="tab-btn" data-tab="summary">📊 总结统计</button>
+      <button class="tab-btn" data-tab="settings">⚙️ 设置</button>
     </nav>
 
     <!-- ==================== 每日待办模块 ==================== -->
@@ -83,7 +102,31 @@
                 <button class="dot-btn mid selected" data-priority="mid" title="中优先级"></button>
                 <button class="dot-btn low" data-priority="low" title="低优先级"></button>
               </div>
+              <label class="repeat-toggle" title="设为重复任务">
+                <input type="checkbox" id="repeatToggle">
+                <span class="repeat-icon">🔁</span>
+              </label>
               <button class="add-todo-btn" id="addTodoBtn">添加</button>
+            </div>
+            <!-- 重复任务选项（默认隐藏） -->
+            <div class="repeat-options" id="repeatOptions" style="display:none;">
+              <select id="repeatType">
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+                <option value="weekdays">仅工作日</option>
+              </select>
+              <select id="repeatWeekday" style="display:none;">
+                <option value="1">周一</option>
+                <option value="2">周二</option>
+                <option value="3">周三</option>
+                <option value="4">周四</option>
+                <option value="5">周五</option>
+                <option value="6">周六</option>
+                <option value="0">周日</option>
+              </select>
+              <select id="repeatMonthday" style="display:none;">
+              </select>
             </div>
           </div>
 
@@ -116,7 +159,6 @@
     <!-- ==================== 灵感记录模块 ==================== -->
     <section class="tab-content" id="ideasSection">
       <div class="ideas-layout">
-        <!-- 添加灵感 -->
         <div class="add-idea-form card">
           <textarea id="ideaInput" placeholder="记录你突然冒出来的灵感..." maxlength="500" rows="3"></textarea>
           <div class="idea-form-bottom">
@@ -127,24 +169,18 @@
             <button class="add-idea-btn" id="addIdeaBtn">记录灵感 💡</button>
           </div>
         </div>
-
-        <!-- 标签筛选 -->
         <div class="idea-filter-tags card">
           <span class="filter-label">标签筛选：</span>
           <div class="idea-all-tags" id="ideaAllTags">
             <span class="idea-tag-filter active" data-tag="all">全部</span>
           </div>
         </div>
-
-        <!-- 排序 -->
         <div class="idea-sort">
           <select id="ideaSortSelect">
             <option value="newest">最新优先</option>
             <option value="oldest">最早优先</option>
           </select>
         </div>
-
-        <!-- 灵感列表 -->
         <div class="ideas-list" id="ideasList">
           <p class="empty-tip">还没有灵感记录，有想法就快写下来吧~</p>
         </div>
@@ -154,7 +190,6 @@
     <!-- ==================== 总结统计模块 ==================== -->
     <section class="tab-content" id="summarySection">
       <div class="summary-layout">
-        <!-- 统计卡片 -->
         <div class="stats-row">
           <div class="stat-card card">
             <div class="stat-icon">✅</div>
@@ -185,14 +220,10 @@
             </div>
           </div>
         </div>
-
-        <!-- 时间范围切换 -->
         <div class="summary-toggle card">
           <button class="summary-tab active" data-range="week">本周</button>
           <button class="summary-tab" data-range="month">本月</button>
         </div>
-
-        <!-- 图表区域 -->
         <div class="charts-row">
           <div class="chart-card card">
             <h3>每日完成趋势</h3>
@@ -203,11 +234,75 @@
             <canvas id="pieChart" height="220"></canvas>
           </div>
         </div>
-
-        <!-- 完成率日历热力图 -->
         <div class="heatmap-card card">
           <h3>完成率热力图</h3>
           <div class="heatmap" id="heatmap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 设置模块 ==================== -->
+    <section class="tab-content" id="settingsSection">
+      <div class="settings-layout">
+        <!-- 主题设置 -->
+        <div class="settings-card card">
+          <h3 class="settings-title">🎨 配色主题</h3>
+          <div class="theme-options" id="themeOptions">
+            <button class="theme-btn active" data-theme="orange" title="橙色（默认）">
+              <span class="theme-preview" style="background: linear-gradient(135deg, #FF8C42, #FFD166);"></span>
+              <span class="theme-name">橙色</span>
+            </button>
+            <button class="theme-btn" data-theme="blue" title="蓝色">
+              <span class="theme-preview" style="background: linear-gradient(135deg, #4A90D9, #74B9FF);"></span>
+              <span class="theme-name">蓝色</span>
+            </button>
+            <button class="theme-btn" data-theme="green" title="绿色">
+              <span class="theme-preview" style="background: linear-gradient(135deg, #27AE60, #6BCB77);"></span>
+              <span class="theme-name">绿色</span>
+            </button>
+            <button class="theme-btn" data-theme="purple" title="紫色">
+              <span class="theme-preview" style="background: linear-gradient(135deg, #8E44AD, #A78BFA);"></span>
+              <span class="theme-name">紫色</span>
+            </button>
+            <button class="theme-btn" data-theme="pink" title="粉色">
+              <span class="theme-preview" style="background: linear-gradient(135deg, #E91E8C, #F472B6);"></span>
+              <span class="theme-name">粉色</span>
+            </button>
+            <button class="theme-btn" data-theme="dark" title="深色模式">
+              <span class="theme-preview" style="background: linear-gradient(135deg, #2D3436, #636E72);"></span>
+              <span class="theme-name">深色</span>
+            </button>
+          </div>
+          <label class="auto-theme-toggle">
+            <input type="checkbox" id="autoThemeToggle">
+            <span>跟随系统深色/浅色模式自动切换</span>
+          </label>
+        </div>
+
+        <!-- 提醒设置 -->
+        <div class="settings-card card">
+          <h3 class="settings-title">⏰ 待办提醒</h3>
+          <div class="reminder-setting">
+            <label class="reminder-enable">
+              <input type="checkbox" id="reminderEnabled">
+              <span>启用每日提醒</span>
+            </label>
+            <div class="reminder-time-row" id="reminderTimeRow" style="display:none;">
+              <label>提醒时间：</label>
+              <input type="time" id="reminderTime" value="09:00">
+            </div>
+          </div>
+        </div>
+
+        <!-- 喝水提醒设置 -->
+        <div class="settings-card card">
+          <h3 class="settings-title">💧 喝水提醒</h3>
+          <div class="water-setting">
+            <label class="water-enable">
+              <input type="checkbox" id="waterEnabled" checked>
+              <span>启用喝水提醒（每30分钟）</span>
+            </label>
+          </div>
         </div>
       </div>
     </section>
@@ -220,6 +315,46 @@
       <h3>太厉害了！全部完成！</h3>
       <p class="completion-msg">今天的待办全部搞定啦，奖励自己一下吧～</p>
       <button class="completion-close-btn" id="completionCloseBtn">耶！知道了</button>
+    </div>
+  </div>
+
+  <!-- 喝水提醒弹窗 -->
+  <div class="water-overlay" id="waterOverlay" style="display:none;">
+    <div class="water-card">
+      <div class="water-emoji">💧🥤💦</div>
+      <h3>该喝水啦！</h3>
+      <p class="water-msg">已经过了30分钟啦，站起来喝杯水，休息一下吧～</p>
+      <button class="water-close-btn" id="waterCloseBtn">好的，已喝水 👍</button>
+    </div>
+  </div>
+
+  <!-- 待办提醒弹窗 -->
+  <div class="reminder-overlay" id="reminderOverlay" style="display:none;">
+    <div class="reminder-card">
+      <div class="reminder-emoji">⏰📋</div>
+      <h3>待办提醒</h3>
+      <div class="reminder-list" id="reminderList"></div>
+      <button class="reminder-close-btn" id="reminderCloseBtn">知道了</button>
+    </div>
+  </div>
+
+  <!-- 编辑待办弹窗 -->
+  <div class="edit-overlay" id="editOverlay" style="display:none;">
+    <div class="edit-card">
+      <h3>编辑待办</h3>
+      <input type="text" id="editTodoText" placeholder="待办内容" maxlength="50">
+      <div class="edit-priority">
+        <span>优先级：</span>
+        <div class="priority-dots" id="editPriorityDots">
+          <button class="dot-btn high" data-priority="high" title="高优先级"></button>
+          <button class="dot-btn mid" data-priority="mid" title="中优先级"></button>
+          <button class="dot-btn low" data-priority="low" title="低优先级"></button>
+        </div>
+      </div>
+      <div class="edit-actions">
+        <button class="edit-cancel-btn" id="editCancelBtn">取消</button>
+        <button class="edit-save-btn" id="editSaveBtn">保存</button>
+      </div>
     </div>
   </div>
 
