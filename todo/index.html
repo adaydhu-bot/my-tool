@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>To Do List</title>
+  <link rel="stylesheet" href="todo.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <!-- 登录/注册页面 -->
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-card">
+      <h2 class="auth-title">To Do List</h2>
+      <p class="auth-subtitle">登录后数据自动云端同步，跨浏览器使用 ☁️</p>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-mode="login">登录</button>
+        <button class="auth-tab" data-mode="register">注册</button>
+      </div>
+      <form class="auth-form" id="authForm">
+        <input type="text" id="authNickname" class="auth-nickname-input" placeholder="昵称" maxlength="20" style="display:none;">
+        <input type="email" id="authEmail" placeholder="邮箱地址" required>
+        <input type="password" id="authPassword" placeholder="密码（至少6位）" required minlength="6">
+        <button type="submit" class="auth-submit-btn" id="authSubmitBtn">登录</button>
+        <p class="auth-error" id="authError"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="app" style="display:none;">
+    <!-- 右上角时钟 -->
+    <div class="corner-clock" id="headerClock">
+      <span class="clock-time" id="clockTime">00:00</span>
+      <span class="clock-sep">·</span>
+      <span class="clock-date" id="clockDate"></span>
+    </div>
+
+    <!-- 头部 -->
+    <header class="header">
+      <h1 id="appTitle">To Do List</h1>
+      <p class="subtitle" id="welcomeText">记录每一天，捕捉每个灵感 ✨</p>
+    </header>
+
+    <!-- 导航标签 -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="todo">📝 每日待办</button>
+      <button class="tab-btn" data-tab="ideas">💡 灵感记录</button>
+      <button class="tab-btn" data-tab="summary">📊 总结统计</button>
+    </nav>
+
+    <!-- ==================== 每日待办模块 ==================== -->
+    <section class="tab-content active" id="todoSection">
+      <div class="todo-layout">
+        <!-- 左侧日历 -->
+        <div class="calendar-panel card">
+          <div class="calendar-header">
+            <button class="cal-nav-btn" id="prevMonth">‹</button>
+            <span class="cal-title" id="calTitle"></span>
+            <button class="cal-nav-btn" id="nextMonth">›</button>
+          </div>
+          <div class="calendar-weekdays">
+            <span>日</span><span>一</span><span>二</span><span>三</span>
+            <span>四</span><span>五</span><span>六</span>
+          </div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+          <button class="today-btn" id="todayBtn">回到今天</button>
+        </div>
+
+        <!-- 右侧待办列表 -->
+        <div class="todo-panel">
+          <div class="todo-date-header card">
+            <h2 id="selectedDateTitle">今天的待办</h2>
+            <span class="todo-progress" id="todoProgress"></span>
+          </div>
+
+          <!-- 添加待办 -->
+          <div class="add-todo-form card">
+            <input type="text" id="todoInput" placeholder="添加新的待办事项..." maxlength="50">
+            <div class="todo-options">
+              <div class="priority-dots" id="priorityDots">
+                <button class="dot-btn high" data-priority="high" title="高优先级"></button>
+                <button class="dot-btn mid selected" data-priority="mid" title="中优先级"></button>
+                <button class="dot-btn low" data-priority="low" title="低优先级"></button>
+              </div>
+              <button class="add-todo-btn" id="addTodoBtn">添加</button>
+            </div>
+          </div>
+
+          <!-- 今日进度条 -->
+          <div class="todo-progress-bar card" id="todoProgressBar">
+            <div class="progress-info">
+              <span class="progress-label">今日进度</span>
+              <span class="progress-count"><span id="progressDone">0</span> / <span id="progressTotal">0</span> 完成</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+          </div>
+
+          <!-- 待办列表 -->
+          <div class="todo-list-container card">
+            <div class="todo-filters">
+              <button class="filter-btn active" data-filter="all">全部</button>
+              <button class="filter-btn" data-filter="active">未完成</button>
+              <button class="filter-btn" data-filter="completed">已完成</button>
+            </div>
+            <div class="todo-list" id="todoList">
+              <p class="empty-tip">今天还没有待办事项，添加一个吧~</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 灵感记录模块 ==================== -->
+    <section class="tab-content" id="ideasSection">
+      <div class="ideas-layout">
+        <!-- 添加灵感 -->
+        <div class="add-idea-form card">
+          <textarea id="ideaInput" placeholder="记录你突然冒出来的灵感..." maxlength="500" rows="3"></textarea>
+          <div class="idea-form-bottom">
+            <div class="idea-tags-input">
+              <input type="text" id="ideaTagInput" placeholder="添加标签后回车" maxlength="10">
+              <div class="idea-new-tags" id="ideaNewTags"></div>
+            </div>
+            <button class="add-idea-btn" id="addIdeaBtn">记录灵感 💡</button>
+          </div>
+        </div>
+
+        <!-- 标签筛选 -->
+        <div class="idea-filter-tags card">
+          <span class="filter-label">标签筛选：</span>
+          <div class="idea-all-tags" id="ideaAllTags">
+            <span class="idea-tag-filter active" data-tag="all">全部</span>
+          </div>
+        </div>
+
+        <!-- 排序 -->
+        <div class="idea-sort">
+          <select id="ideaSortSelect">
+            <option value="newest">最新优先</option>
+            <option value="oldest">最早优先</option>
+          </select>
+        </div>
+
+        <!-- 灵感列表 -->
+        <div class="ideas-list" id="ideasList">
+          <p class="empty-tip">还没有灵感记录，有想法就快写下来吧~</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 总结统计模块 ==================== -->
+    <section class="tab-content" id="summarySection">
+      <div class="summary-layout">
+        <!-- 统计卡片 -->
+        <div class="stats-row">
+          <div class="stat-card card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-info">
+              <span class="stat-value" id="statCompleted">0</span>
+              <span class="stat-label">已完成</span>
+            </div>
+          </div>
+          <div class="stat-card card">
+            <div class="stat-icon">📋</div>
+            <div class="stat-info">
+              <span class="stat-value" id="statTotal">0</span>
+              <span class="stat-label">总任务</span>
+            </div>
+          </div>
+          <div class="stat-card card">
+            <div class="stat-icon">📈</div>
+            <div class="stat-info">
+              <span class="stat-value" id="statRate">0%</span>
+              <span class="stat-label">完成率</span>
+            </div>
+          </div>
+          <div class="stat-card card">
+            <div class="stat-icon">🔥</div>
+            <div class="stat-info">
+              <span class="stat-value" id="statStreak">0</span>
+              <span class="stat-label">连续天数</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 时间范围切换 -->
+        <div class="summary-toggle card">
+          <button class="summary-tab active" data-range="week">本周</button>
+          <button class="summary-tab" data-range="month">本月</button>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="charts-row">
+          <div class="chart-card card">
+            <h3>每日完成趋势</h3>
+            <canvas id="barChart" height="220"></canvas>
+          </div>
+          <div class="chart-card card">
+            <h3>优先级分布</h3>
+            <canvas id="pieChart" height="220"></canvas>
+          </div>
+        </div>
+
+        <!-- 完成率日历热力图 -->
+        <div class="heatmap-card card">
+          <h3>完成率热力图</h3>
+          <div class="heatmap" id="heatmap"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 全部完成庆祝弹窗 -->
+  <div class="completion-overlay" id="completionOverlay" style="display:none;">
+    <div class="completion-card">
+      <div class="completion-emoji">🎉🎊🥳</div>
+      <h3>太厉害了！全部完成！</h3>
+      <p class="completion-msg">今天的待办全部搞定啦，奖励自己一下吧～</p>
+      <button class="completion-close-btn" id="completionCloseBtn">耶！知道了</button>
+    </div>
+  </div>
+
+  <script src="todo.js"></script>
+</body>
+</html>

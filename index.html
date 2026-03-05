@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的工具箱</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary: #FF8C42;
+      --primary-light: #FFB07A;
+      --secondary: #FFD166;
+      --bg: #FFF8F0;
+      --card-bg: #FFFFFF;
+      --text: #4A3728;
+      --text-light: #A08B7A;
+      --border: #F0E6DD;
+      --shadow: 0 4px 20px rgba(255, 140, 66, 0.12);
+      --shadow-hover: 0 12px 36px rgba(255, 140, 66, 0.22);
+      --radius: 20px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: -120px;
+      right: -80px;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(255, 209, 102, 0.2) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: -100px;
+      left: -60px;
+      width: 350px;
+      height: 350px;
+      background: radial-gradient(circle, rgba(255, 140, 66, 0.12) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 60px 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+
+    .header h1 {
+      font-size: 2.6rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 800;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: var(--text-light);
+      font-size: 1.05rem;
+    }
+
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .tool-card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 32px 28px;
+      box-shadow: var(--shadow);
+      transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tool-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .tool-card:hover {
+      transform: translateY(-6px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .tool-card:hover::before {
+      opacity: 1;
+    }
+
+    .tool-icon {
+      font-size: 2.8rem;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .tool-name {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .tool-desc {
+      color: var(--text-light);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .tool-arrow {
+      position: absolute;
+      right: 24px;
+      bottom: 24px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      color: var(--primary);
+      transition: all 0.3s;
+    }
+
+    .tool-card:hover .tool-arrow {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: #fff;
+      transform: translateX(4px);
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 60px;
+      color: var(--text-light);
+      font-size: 0.85rem;
+      opacity: 0.6;
+    }
+
+    @media (max-width: 480px) {
+      .container { padding: 30px 16px; }
+      .header h1 { font-size: 1.8rem; }
+      .tools-grid { grid-template-columns: 1fr; gap: 16px; }
+      .tool-card { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🧰 我的工具箱</h1>
+      <p>所有小工具都在这里，点击进入</p>
+    </header>
+
+    <div class="tools-grid">
+      <a class="tool-card" href="todo/">
+        <div class="tool-icon">📝</div>
+        <div class="tool-name">To Do List</div>
+        <div class="tool-desc">每日待办、灵感记录、统计分析，云端同步你的计划和想法</div>
+        <div class="tool-arrow">→</div>
+      </a>
+
+      <a class="tool-card" href="eat-what/">
+        <div class="tool-icon">🍽️</div>
+        <div class="tool-name">今天吃什么</div>
+        <div class="tool-desc">选择困难症救星！转盘随机决定今天吃什么</div>
+        <div class="tool-arrow">→</div>
+      </a>
+    </div>
+
+    <div class="footer">以后做的新工具都会出现在这里~</div>
+  </div>
+</body>
+</html>

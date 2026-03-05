@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>今天吃什么</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 头部 -->
+    <header class="header">
+      <h1>🍽️ 今天吃什么</h1>
+      <p class="subtitle">选择困难？让转盘帮你决定！</p>
+    </header>
+
+    <!-- 主布局 -->
+    <div class="main">
+      <!-- 转盘区域 -->
+      <div class="wheel-section">
+        <div class="wheel-container">
+          <div class="wheel-pointer">▼</div>
+          <canvas id="wheelCanvas" width="400" height="400"></canvas>
+        </div>
+        <button class="spin-btn" id="spinBtn">开始转！</button>
+      </div>
+
+      <!-- 侧面板 -->
+      <div class="side-panel">
+        <!-- 美食推荐库 -->
+        <div class="recommend-section">
+          <h2>🌟 美食推荐库</h2>
+          <p class="recommend-tip">点击添加到转盘，或一键导入整个分类</p>
+          <div class="category-tabs" id="categoryTabs"></div>
+          <div class="recommend-list" id="recommendList"></div>
+        </div>
+
+        <!-- 美食管理 -->
+        <div class="food-manager">
+          <h2>🍕 我的美食</h2>
+          <div class="add-food">
+            <input type="text" id="foodInput" placeholder="输入美食名称..." maxlength="20">
+            <button class="add-btn" id="addBtn">添加</button>
+          </div>
+          <div class="food-list" id="foodList"></div>
+          <div class="food-actions">
+            <button class="action-btn reset-btn" id="resetBtn">恢复默认</button>
+            <button class="action-btn clear-btn" id="clearBtn">清空全部</button>
+          </div>
+        </div>
+
+        <!-- 历史记录 -->
+        <div class="history-section">
+          <h2>📜 历史记录</h2>
+          <div class="history-list" id="historyList"></div>
+          <button class="action-btn clear-btn" id="clearHistoryBtn">清空记录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 结果弹窗 -->
+  <div class="modal-overlay" id="resultModal">
+    <div class="modal-content">
+      <div class="modal-emoji">🎉</div>
+      <h2>今天就吃</h2>
+      <div class="result-name" id="resultName"></div>
+      <div class="modal-actions">
+        <button class="modal-btn again-btn" id="againBtn">再转一次</button>
+        <button class="modal-btn close-btn" id="closeModalBtn">就这个！</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
