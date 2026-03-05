@@ -20,6 +20,69 @@ let currentIdeaSort = 'newest';
 let newIdeaTags = [];
 let currentUser = null;
 
+// ========== 超时与离线支持 ==========
+function withTimeout(promise, ms = 8000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('请求超时')), ms))
+  ]);
+}
+
+function tempId() {
+  return 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+// 后台重试队列：离线时先存本地，联网后自动同步
+let pendingSyncs = [];
+
+async function processPendingSyncs() {
+  if (pendingSyncs.length === 0 || !currentUser) return;
+  const queue = [...pendingSyncs];
+  pendingSyncs = [];
+
+  for (const task of queue) {
+    try {
+      if (task.type === 'add_todo') {
+        const { data, error } = await withTimeout(
+          _supaClient.from('todos').insert({
+            user_id: currentUser.id,
+            date: task.date,
+            text: task.text,
+            priority: task.priority,
+            done: task.done
+          }).select().single()
+        );
+        if (!error && data) {
+          // 替换本地临时 ID 为云端真实 ID
+          const items = todos[task.date] || [];
+          const localItem = items.find(t => t.id === task.localId);
+          if (localItem) localItem.id = data.id;
+          backupTodosToLocal();
+        }
+      } else if (task.type === 'add_idea') {
+        const { data, error } = await withTimeout(
+          _supaClient.from('ideas').insert({
+            user_id: currentUser.id,
+            text: task.text,
+            tags: task.tags
+          }).select().single()
+        );
+        if (!error && data) {
+          const localItem = ideas.find(i => i.id === task.localId);
+          if (localItem) localItem.id = data.id;
+          backupIdeasToLocal();
+        }
+      }
+    } catch (e) {
+      // 同步再次失败，放回队列
+      pendingSyncs.push(task);
+    }
+  }
+}
+
+// 每 30 秒尝试同步一次待处理的离线数据
+setInterval(processPendingSyncs, 30000);
+
 // ========== 认证模块 ==========
 function setupAuth() {
   const overlay = document.getElementById('authOverlay');
@@ -202,29 +265,42 @@ async function carryOverUnfinishedTodos() {
 
   // 批量插入顺延任务到今天
   for (const task of tasksToCarry) {
-    const { data, error } = await _supaClient
-      .from('todos')
-      .insert({
-        user_id: currentUser.id,
-        date: today,
+    try {
+      const { data, error } = await withTimeout(
+        _supaClient.from('todos').insert({
+          user_id: currentUser.id,
+          date: today,
+          text: task.text,
+          priority: task.priority,
+          done: false,
+          carried_from: task.originalDate
+        }).select().single(),
+        8000
+      );
+
+      if (!error && data) {
+        if (!todos[today]) todos[today] = [];
+        todos[today].push({
+          id: data.id,
+          text: data.text,
+          priority: data.priority,
+          done: data.done,
+          createdAt: data.created_at,
+          carriedFrom: data.carried_from
+        });
+      }
+    } catch (err) {
+      // 超时则本地顺延
+      if (!todos[today]) todos[today] = [];
+      todos[today].push({
+        id: tempId(),
         text: task.text,
         priority: task.priority,
         done: false,
-        carried_from: task.originalDate
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      if (!todos[today]) todos[today] = [];
-      todos[today].push({
-        id: data.id,
-        text: data.text,
-        priority: data.priority,
-        done: data.done,
-        createdAt: data.created_at,
-        carriedFrom: data.carried_from
+        createdAt: new Date().toISOString(),
+        carriedFrom: task.originalDate
       });
+      console.warn('顺延任务超时，已本地添加:', task.text);
     }
   }
 }
@@ -236,18 +312,19 @@ async function loadAllData() {
 
 async function loadTodosFromCloud() {
   try {
-    const { data, error } = await _supaClient
-      .from('todos')
-      .select('*')
-      .eq('user_id', currentUser.id)
-      .order('created_at', { ascending: true });
+    const { data, error } = await withTimeout(
+      _supaClient
+        .from('todos')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: true }),
+      10000
+    );
 
     if (error) {
       console.error('加载待办失败:', error);
-      // 不清空 todos，保留之前的数据
       return;
     }
-    // 只有查询成功才更新数据
     const newTodos = {};
     if (data) {
       data.forEach(item => {
@@ -264,25 +341,31 @@ async function loadTodosFromCloud() {
     }
     todos = newTodos;
   } catch (err) {
-    console.error('加载待办异常:', err);
-    // 不清空 todos，保留之前的数据
+    console.error('加载待办超时/异常:', err);
+    // 加载失败尝试从本地备份恢复
+    const localTodos = getLocalTodosBackup();
+    if (localTodos) {
+      todos = localTodos;
+      console.log('已从本地备份加载待办数据');
+    }
   }
 }
 
 async function loadIdeasFromCloud() {
   try {
-    const { data, error } = await _supaClient
-      .from('ideas')
-      .select('*')
-      .eq('user_id', currentUser.id)
-      .order('created_at', { ascending: true });
+    const { data, error } = await withTimeout(
+      _supaClient
+        .from('ideas')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: true }),
+      10000
+    );
 
     if (error) {
       console.error('加载灵感失败:', error);
-      // 不清空 ideas，保留之前的数据
       return;
     }
-    // 只有查询成功才更新数据
     if (data) {
       ideas = data.map(item => ({
         id: item.id,
@@ -292,8 +375,12 @@ async function loadIdeasFromCloud() {
       }));
     }
   } catch (err) {
-    console.error('加载灵感异常:', err);
-    // 不清空 ideas，保留之前的数据
+    console.error('加载灵感超时/异常:', err);
+    const localIdeas = getLocalIdeasBackup();
+    if (localIdeas) {
+      ideas = localIdeas;
+      console.log('已从本地备份加载灵感数据');
+    }
   }
 }
 
@@ -350,31 +437,36 @@ async function restoreFromLocalBackup() {
     const allLocalItems = Object.values(localTodos).flat();
     if (allLocalItems.length > 0) {
       console.log(`发现本地备份：${allLocalItems.length} 条待办，正在恢复...`);
-      for (const dateKey of Object.keys(localTodos)) {
-        for (const item of localTodos[dateKey]) {
-          const { data, error } = await _supaClient
-            .from('todos')
-            .insert({
-              user_id: currentUser.id,
-              date: dateKey,
-              text: item.text,
-              priority: item.priority,
-              done: item.done,
-              carried_from: item.carriedFrom || null
-            })
-            .select()
-            .single();
+      for (const dk of Object.keys(localTodos)) {
+        for (const item of localTodos[dk]) {
+          try {
+            const { data, error } = await withTimeout(
+              _supaClient.from('todos').insert({
+                user_id: currentUser.id,
+                date: dk,
+                text: item.text,
+                priority: item.priority,
+                done: item.done,
+                carried_from: item.carriedFrom || null
+              }).select().single(),
+              8000
+            );
 
-          if (!error && data) {
-            if (!todos[dateKey]) todos[dateKey] = [];
-            todos[dateKey].push({
-              id: data.id,
-              text: data.text,
-              priority: data.priority,
-              done: data.done,
-              createdAt: data.created_at,
-              carriedFrom: data.carried_from || null
-            });
+            if (!error && data) {
+              if (!todos[dk]) todos[dk] = [];
+              todos[dk].push({
+                id: data.id,
+                text: data.text,
+                priority: data.priority,
+                done: data.done,
+                createdAt: data.created_at,
+                carriedFrom: data.carried_from || null
+              });
+            }
+          } catch (e) {
+            // 超时就直接用本地数据
+            if (!todos[dk]) todos[dk] = [];
+            todos[dk].push({ ...item, id: item.id || tempId() });
           }
         }
       }
@@ -386,23 +478,26 @@ async function restoreFromLocalBackup() {
   if (ideaCount === 0 && localIdeas && localIdeas.length > 0) {
     console.log(`发现本地备份：${localIdeas.length} 条灵感，正在恢复...`);
     for (const item of localIdeas) {
-      const { data, error } = await _supaClient
-        .from('ideas')
-        .insert({
-          user_id: currentUser.id,
-          text: item.text,
-          tags: item.tags || []
-        })
-        .select()
-        .single();
+      try {
+        const { data, error } = await withTimeout(
+          _supaClient.from('ideas').insert({
+            user_id: currentUser.id,
+            text: item.text,
+            tags: item.tags || []
+          }).select().single(),
+          8000
+        );
 
-      if (!error && data) {
-        ideas.push({
-          id: data.id,
-          text: data.text,
-          tags: data.tags || [],
-          createdAt: data.created_at
-        });
+        if (!error && data) {
+          ideas.push({
+            id: data.id,
+            text: data.text,
+            tags: data.tags || [],
+            createdAt: data.created_at
+          });
+        }
+      } catch (e) {
+        ideas.push({ ...item, id: item.id || tempId() });
       }
     }
     restored = true;
@@ -614,7 +709,7 @@ function getSelectedPriority() {
 let isAddingTodo = false;
 
 async function addTodo() {
-  if (isAddingTodo) return; // 防止重复点击
+  if (isAddingTodo) return;
 
   const input = document.getElementById('todoInput');
   const addBtn = document.getElementById('addTodoBtn');
@@ -631,7 +726,6 @@ async function addTodo() {
     return;
   }
 
-  // 显示加载状态
   isAddingTodo = true;
   addBtn.disabled = true;
   addBtn.textContent = '添加中...';
@@ -639,47 +733,62 @@ async function addTodo() {
   const key = dateKey(selectedDate);
 
   try {
-    const { data, error } = await _supaClient
-      .from('todos')
-      .insert({
+    const { data, error } = await withTimeout(
+      _supaClient.from('todos').insert({
         user_id: currentUser.id,
         date: key,
         text,
         priority,
         done: false
-      })
-      .select()
-      .single();
+      }).select().single()
+    );
 
     if (error) {
       console.error('添加失败:', error);
-      alert('添加失败: ' + error.message);
-      return;
+      // 云端失败，降级到本地
+      addTodoLocally(key, text, priority);
+    } else {
+      if (!todos[key]) todos[key] = [];
+      todos[key].push({
+        id: data.id,
+        text: data.text,
+        priority: data.priority,
+        done: data.done,
+        createdAt: data.created_at,
+        carriedFrom: data.carried_from || null
+      });
     }
-
-    if (!todos[key]) todos[key] = [];
-    todos[key].push({
-      id: data.id,
-      text: data.text,
-      priority: data.priority,
-      done: data.done,
-      createdAt: data.created_at,
-      carriedFrom: data.carried_from || null
-    });
-
-    input.value = '';
-    backupTodosToLocal();
-    renderTodoList();
-    renderCalendar();
-    updateTodoHeader();
   } catch (err) {
-    console.error('添加待办异常:', err);
-    alert('网络错误，请检查网络后重试');
-  } finally {
-    isAddingTodo = false;
-    addBtn.disabled = false;
-    addBtn.textContent = '添加';
+    console.error('添加待办超时/异常:', err);
+    // 超时或网络错误，降级到本地
+    addTodoLocally(key, text, priority);
   }
+
+  input.value = '';
+  backupTodosToLocal();
+  renderTodoList();
+  renderCalendar();
+  updateTodoHeader();
+
+  isAddingTodo = false;
+  addBtn.disabled = false;
+  addBtn.textContent = '添加';
+}
+
+function addTodoLocally(key, text, priority) {
+  const localId = tempId();
+  if (!todos[key]) todos[key] = [];
+  todos[key].push({
+    id: localId,
+    text,
+    priority,
+    done: false,
+    createdAt: new Date().toISOString(),
+    carriedFrom: null
+  });
+  // 加入后台同步队列
+  pendingSyncs.push({ type: 'add_todo', localId, date: key, text, priority, done: false });
+  console.log('已离线添加待办，等待后台同步');
 }
 
 async function toggleTodo(id) {
@@ -690,7 +799,9 @@ async function toggleTodo(id) {
   const wasUndone = !item.done;
   item.done = !item.done;
 
-  _supaClient.from('todos').update({ done: item.done }).eq('id', id).then();
+  // 云端更新加超时，不阻塞
+  withTimeout(_supaClient.from('todos').update({ done: item.done }).eq('id', id), 8000)
+    .catch(e => console.warn('更新完成状态超时，本地已保存:', e));
   backupTodosToLocal();
 
   if (wasUndone) {
@@ -812,14 +923,19 @@ async function deleteTodo(id) {
   const key = dateKey(selectedDate);
   if (!todos[key]) return;
 
-  await _supaClient.from('todos').delete().eq('id', id);
-
+  // 先更新本地，再尝试云端删除（不阻塞）
   todos[key] = todos[key].filter(t => t.id !== id);
   if (todos[key].length === 0) delete todos[key];
   backupTodosToLocal();
   renderTodoList();
   updateTodoHeader();
   renderCalendar();
+
+  // 云端删除加超时，不阻塞 UI
+  if (!id.startsWith('local_')) {
+    withTimeout(_supaClient.from('todos').delete().eq('id', id), 8000)
+      .catch(e => console.warn('云端删除超时:', e));
+  }
 }
 
 // ================================================================
@@ -1156,11 +1272,16 @@ function renderIdeasList() {
 
   listEl.querySelectorAll('.idea-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await _supaClient.from('ideas').delete().eq('id', btn.dataset.id);
-      ideas = ideas.filter(i => i.id !== btn.dataset.id);
+      const deleteId = btn.dataset.id;
+      ideas = ideas.filter(i => i.id !== deleteId);
       backupIdeasToLocal();
       renderIdeasList();
       renderIdeaFilterTags();
+      // 云端删除不阻塞
+      if (!deleteId.startsWith('local_')) {
+        withTimeout(_supaClient.from('ideas').delete().eq('id', deleteId), 8000)
+          .catch(e => console.warn('云端删除灵感超时:', e));
+      }
     });
   });
 }
@@ -1187,6 +1308,7 @@ async function addIdea() {
   const input = document.getElementById('ideaInput');
   const addBtn = document.getElementById('addIdeaBtn');
   const text = input.value.trim();
+  const tags = [...newIdeaTags];
 
   if (!text) {
     input.focus();
@@ -1198,43 +1320,52 @@ async function addIdea() {
   addBtn.textContent = '记录中...';
 
   try {
-    const { data, error } = await _supaClient
-      .from('ideas')
-      .insert({
+    const { data, error } = await withTimeout(
+      _supaClient.from('ideas').insert({
         user_id: currentUser.id,
         text,
-        tags: [...newIdeaTags]
-      })
-      .select()
-      .single();
+        tags
+      }).select().single()
+    );
 
     if (error) {
-      console.error('添加失败:', error);
-      alert('添加灵感失败: ' + error.message);
-      return;
+      console.error('添加灵感失败:', error);
+      addIdeaLocally(text, tags);
+    } else {
+      ideas.push({
+        id: data.id,
+        text: data.text,
+        tags: data.tags || [],
+        createdAt: data.created_at
+      });
     }
-
-    ideas.push({
-      id: data.id,
-      text: data.text,
-      tags: data.tags || [],
-      createdAt: data.created_at
-    });
-
-    input.value = '';
-    newIdeaTags = [];
-    renderNewIdeaTags();
-    backupIdeasToLocal();
-    renderIdeasList();
-    renderIdeaFilterTags();
   } catch (err) {
-    console.error('添加灵感异常:', err);
-    alert('网络错误，请检查网络后重试');
-  } finally {
-    isAddingIdea = false;
-    addBtn.disabled = false;
-    addBtn.textContent = '记录灵感 💡';
+    console.error('添加灵感超时/异常:', err);
+    addIdeaLocally(text, tags);
   }
+
+  input.value = '';
+  newIdeaTags = [];
+  renderNewIdeaTags();
+  backupIdeasToLocal();
+  renderIdeasList();
+  renderIdeaFilterTags();
+
+  isAddingIdea = false;
+  addBtn.disabled = false;
+  addBtn.textContent = '记录灵感 💡';
+}
+
+function addIdeaLocally(text, tags) {
+  const localId = tempId();
+  ideas.push({
+    id: localId,
+    text,
+    tags,
+    createdAt: new Date().toISOString()
+  });
+  pendingSyncs.push({ type: 'add_idea', localId, text, tags });
+  console.log('已离线添加灵感，等待后台同步');
 }
 
 // ================================================================
@@ -1248,7 +1379,7 @@ function startHeartbeat() {
   heartbeatTimer = setInterval(async () => {
     if (!currentUser) return;
     try {
-      await _supaClient.from('todos').select('id').limit(1);
+      await withTimeout(_supaClient.from('todos').select('id').limit(1), 10000);
       console.log('心跳保活: OK', new Date().toLocaleTimeString());
     } catch (e) {
       console.warn('心跳保活失败:', e);
