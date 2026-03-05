@@ -100,7 +100,13 @@
 
           <!-- 添加待办 -->
           <div class="add-todo-form card">
-            <input type="text" id="todoInput" placeholder="添加新的待办事项..." maxlength="50">
+            <div class="todo-input-row">
+              <input type="text" id="todoInput" placeholder="添加新的待办事项..." maxlength="50">
+              <div class="time-input-wrap">
+                <input type="time" id="todoTimeInput" title="设置具体时间（可选）">
+                <span class="time-input-label">时间</span>
+              </div>
+            </div>
             <div class="todo-options">
               <div class="priority-dots" id="priorityDots">
                 <button class="dot-btn high" data-priority="high" title="高优先级"></button>
@@ -357,6 +363,11 @@
     <div class="edit-card">
       <h3>编辑待办</h3>
       <input type="text" id="editTodoText" placeholder="待办内容" maxlength="50">
+      <div class="edit-time-row">
+        <label>时间：</label>
+        <input type="time" id="editTodoTime">
+        <span class="edit-time-hint">留空则为全天任务</span>
+      </div>
       <div class="edit-priority">
         <span>优先级：</span>
         <div class="priority-dots" id="editPriorityDots">

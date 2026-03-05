@@ -603,8 +603,14 @@ body::after {
   gap: 10px;
 }
 
-.add-todo-form input[type="text"] {
-  width: 100%;
+.todo-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.todo-input-row input[type="text"] {
+  flex: 1;
   padding: 12px 16px;
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
@@ -613,6 +619,35 @@ body::after {
   transition: border-color 0.3s;
   background: var(--input-bg);
   color: var(--text);
+}
+
+.todo-input-row input[type="text"]:focus { border-color: var(--primary); }
+
+.time-input-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.time-input-wrap input[type="time"] {
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--text);
+  transition: border-color 0.3s;
+  width: 110px;
+}
+
+.time-input-wrap input[type="time"]:focus { border-color: var(--primary); }
+
+.time-input-label {
+  font-size: 0.68rem;
+  color: var(--text-lighter);
 }
 
 .add-todo-form input[type="text"]:focus { border-color: var(--primary); }
@@ -900,6 +935,67 @@ body::after {
 .todo-list::-webkit-scrollbar { width: 4px; }
 .todo-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+/* 待办分区标题 */
+.todo-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-light);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.section-icon {
+  font-size: 0.85rem;
+}
+
+.todo-section {
+  margin-bottom: 4px;
+}
+
+.timed-section {
+  border-left: 2px solid rgba(255, 140, 66, 0.2);
+  margin-left: 14px;
+  padding-left: 0;
+}
+
+.timed-section .todo-item {
+  border-left: 3px solid transparent;
+}
+
+/* 时间标签 */
+.time-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, rgba(255, 140, 66, 0.12), rgba(255, 209, 102, 0.15));
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 虚拟重复任务样式（未实例化的，半透明显示） */
+.todo-item.virtual-todo {
+  opacity: 0.6;
+}
+
+.todo-item.virtual-todo:hover {
+  opacity: 0.85;
+}
+
+.todo-item.virtual-todo .todo-delete {
+  display: none;
+}
+
 .todo-item {
   display: flex;
   align-items: flex-start;
@@ -971,6 +1067,10 @@ body::after {
   word-break: break-word;
   transition: all 0.3s;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 
 .todo-text:hover {
@@ -1079,6 +1179,8 @@ body::after {
   right: 48px;
   display: flex;
   flex-direction: column;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  letter-spacing: 0.5px;
   align-items: center;
   padding: 3px 10px 4px;
   color: #fff;
@@ -1096,7 +1198,7 @@ body::after {
   letter-spacing: 0;
 }
 
-.carried-badge.carry-easy { background: linear-gradient(135deg, #6BCB77, #8FE09A); }
+.carried-badge.carry-easy { background: linear-gradient(135deg, var(--primary-light, #FFB07A), var(--primary, #FF8C42)); }
 .carried-badge.carry-warn { background: linear-gradient(135deg, var(--primary), var(--secondary)); }
 .carried-badge.carry-danger { background: linear-gradient(135deg, #FF6B6B, #FF4757); }
 
@@ -1307,6 +1409,36 @@ body::after {
 }
 
 .edit-card input[type="text"]:focus { border-color: var(--primary); }
+
+.edit-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.edit-time-row label {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.edit-time-row input[type="time"] {
+  padding: 6px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.edit-time-row input[type="time"]:focus { border-color: var(--primary); }
+
+.edit-time-hint {
+  font-size: 0.75rem;
+  color: var(--text-lighter);
+}
 
 .edit-priority {
   display: flex;
@@ -1904,6 +2036,9 @@ body::after {
   .stats-row { grid-template-columns: 1fr 1fr; gap: 10px; }
   .stat-card { padding: 14px; }
   .todo-options { flex-wrap: wrap; }
+  .todo-input-row { flex-direction: column; }
+  .time-input-wrap { flex-direction: row; gap: 6px; width: 100%; }
+  .time-input-wrap input[type="time"] { width: 100%; }
   .idea-form-bottom { flex-direction: column; align-items: stretch; }
   .theme-options { grid-template-columns: repeat(2, 1fr); }
   .water-reminder { top: 10px; left: 12px; }

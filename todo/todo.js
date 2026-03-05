@@ -291,6 +291,7 @@ async function carryOverUnfinishedTodos() {
           carriedFrom: data.carried_from,
           subtasks: [],
           repeat: null,
+          time: task.time || null,
           order: todos[today].length
         });
       }
@@ -305,41 +306,24 @@ async function carryOverUnfinishedTodos() {
         carriedFrom: task.originalDate,
         subtasks: [],
         repeat: null,
+        time: task.time || null,
         order: todos[today].length
       });
     }
   }
 }
 
-// ========== 重复任务生成 ==========
+// ========== 重复任务生成（仅为今天生成实体） ==========
 function generateRepeatingTodos() {
   const today = todayKey();
   const todayDate = new Date();
   const dayOfWeek = todayDate.getDay();
   const dayOfMonth = todayDate.getDate();
 
-  // 收集所有重复任务模板
-  const repeatTemplates = [];
-  Object.keys(todos).forEach(dk => {
-    (todos[dk] || []).forEach(item => {
-      if (item.repeat) {
-        repeatTemplates.push(item);
-      }
-    });
-  });
-
-  // 去重：同文字同重复类型只保留最新
-  const uniqueRepeats = {};
-  repeatTemplates.forEach(t => {
-    const key = t.text + '|' + JSON.stringify(t.repeat);
-    if (!uniqueRepeats[key] || new Date(t.createdAt) > new Date(uniqueRepeats[key].createdAt)) {
-      uniqueRepeats[key] = t;
-    }
-  });
-
+  const templates = collectRepeatTemplates();
   const todayItems = todos[today] || [];
 
-  Object.values(uniqueRepeats).forEach(template => {
+  Object.values(templates).forEach(template => {
     const repeat = template.repeat;
     let shouldGenerate = false;
 
@@ -369,11 +353,11 @@ function generateRepeatingTodos() {
           carriedFrom: null,
           subtasks: [],
           repeat: template.repeat,
+          time: template.time || null,
           order: todos[today].length
         };
         todos[today].push(newItem);
 
-        // 后台同步到云端
         if (currentUser) {
           withTimeout(
             _supaClient.from('todos').insert({
@@ -391,6 +375,88 @@ function generateRepeatingTodos() {
       }
     }
   });
+}
+
+// 收集所有重复任务模板（去重）
+function collectRepeatTemplates() {
+  const repeatTemplates = [];
+  Object.keys(todos).forEach(dk => {
+    (todos[dk] || []).forEach(item => {
+      if (item.repeat) {
+        repeatTemplates.push({ ...item, _sourceDate: dk });
+      }
+    });
+  });
+
+  const uniqueRepeats = {};
+  repeatTemplates.forEach(t => {
+    const key = t.text + '|' + JSON.stringify(t.repeat);
+    if (!uniqueRepeats[key] || new Date(t.createdAt) > new Date(uniqueRepeats[key].createdAt)) {
+      uniqueRepeats[key] = t;
+    }
+  });
+  return uniqueRepeats;
+}
+
+// 判断某个日期是否应该有某个重复任务的实例
+function dateMatchesRepeat(dateStr, repeat, createdAt) {
+  const parts = dateStr.split('-');
+  const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+  const dayOfWeek = d.getDay();
+  const dayOfMonth = d.getDate();
+
+  // 只在创建日期当天或之后生效
+  const createdDate = new Date(createdAt);
+  createdDate.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  if (d < createdDate) return false;
+
+  // 创建当天只在匹配时才显示（如周四创建每周五→周四不显示）
+  if (repeat.type === 'daily') return true;
+  if (repeat.type === 'weekly') return dayOfWeek === repeat.value;
+  if (repeat.type === 'monthly') return dayOfMonth === repeat.value;
+  if (repeat.type === 'weekdays') return dayOfWeek >= 1 && dayOfWeek <= 5;
+  return false;
+}
+
+// 获取某日期的虚拟重复任务（不含已实际存在的）
+function getVirtualRepeatingTodos(dateKey) {
+  const templates = collectRepeatTemplates();
+  const existingItems = todos[dateKey] || [];
+  const virtualItems = [];
+
+  Object.values(templates).forEach(template => {
+    if (!dateMatchesRepeat(dateKey, template.repeat, template.createdAt)) return;
+
+    // 如果该日期已有此重复任务的实体，跳过
+    const alreadyExists = existingItems.some(t =>
+      t.text === template.text && t.repeat && JSON.stringify(t.repeat) === JSON.stringify(template.repeat)
+    );
+    if (alreadyExists) return;
+
+    virtualItems.push({
+      id: 'virtual_' + template.id + '_' + dateKey,
+      text: template.text,
+      priority: template.priority,
+      done: false,
+      createdAt: template.createdAt,
+      carriedFrom: null,
+      subtasks: [],
+      repeat: template.repeat,
+      time: template.time || null,
+      order: 9000 + virtualItems.length,
+      isVirtual: true
+    });
+  });
+
+  return virtualItems;
+}
+
+// 判断某日期是否有任何待办（含虚拟重复）
+function dateHasTodos(dateKey) {
+  if (todos[dateKey] && todos[dateKey].length > 0) return true;
+  const templates = collectRepeatTemplates();
+  return Object.values(templates).some(t => dateMatchesRepeat(dateKey, t.repeat, t.createdAt));
 }
 
 // ========== 云端数据加载 ==========
@@ -426,6 +492,7 @@ async function loadTodosFromCloud() {
           carriedFrom: item.carried_from || null,
           subtasks: [],
           repeat: null,
+          time: null,
           order: newTodos[item.date].length
         };
         newTodos[item.date].push(todoItem);
@@ -442,6 +509,7 @@ async function loadTodosFromCloud() {
           if (localItem) {
             item.subtasks = localItem.subtasks || [];
             item.repeat = localItem.repeat || null;
+            item.time = localItem.time || null;
             if (localItem.order !== undefined) item.order = localItem.order;
           }
         });
@@ -555,12 +623,13 @@ async function restoreFromLocalBackup() {
                 carriedFrom: data.carried_from || null,
                 subtasks: item.subtasks || [],
                 repeat: item.repeat || null,
+                time: item.time || null,
                 order: todos[dk].length
               });
             }
           } catch (e) {
             if (!todos[dk]) todos[dk] = [];
-            todos[dk].push({ ...item, id: item.id || tempId(), subtasks: item.subtasks || [], repeat: item.repeat || null, order: todos[dk].length });
+            todos[dk].push({ ...item, id: item.id || tempId(), subtasks: item.subtasks || [], repeat: item.repeat || null, time: item.time || null, order: todos[dk].length });
           }
         }
       }
@@ -652,7 +721,7 @@ function renderCalendar() {
     const day = daysInPrevMonth - i;
     const d = new Date(calYear, calMonth - 1, day);
     const key = dateKey(d);
-    const hasTodos = todos[key] && todos[key].length > 0;
+    const hasTodos = dateHasTodos(key);
     html += `<button class="cal-day other-month${hasTodos ? ' has-todos' : ''}" data-date="${key}">${day}</button>`;
   }
 
@@ -661,7 +730,7 @@ function renderCalendar() {
     const key = dateKey(d);
     const isToday = key === todayKey();
     const isSelected = key === selKey;
-    const hasTodos = todos[key] && todos[key].length > 0;
+    const hasTodos = dateHasTodos(key);
     let cls = 'cal-day';
     if (isToday) cls += ' today';
     if (isSelected) cls += ' selected';
@@ -674,7 +743,7 @@ function renderCalendar() {
   for (let day = 1; day <= remainCells; day++) {
     const d = new Date(calYear, calMonth + 1, day);
     const key = dateKey(d);
-    const hasTodos = todos[key] && todos[key].length > 0;
+    const hasTodos = dateHasTodos(key);
     html += `<button class="cal-day other-month${hasTodos ? ' has-todos' : ''}" data-date="${key}">${day}</button>`;
   }
 
@@ -695,7 +764,9 @@ function renderCalendar() {
 
 // ========== 待办列表 ==========
 function getTodosForDate(key) {
-  return todos[key] || [];
+  const real = todos[key] || [];
+  const virtual = getVirtualRepeatingTodos(key);
+  return [...real, ...virtual];
 }
 
 function updateTodoHeader() {
@@ -740,45 +811,86 @@ function renderTodoList() {
     return;
   }
 
-  // 按 order 排序（拖拽排序）
-  items = [...items].sort((a, b) => {
+  // 分为定时任务和全天任务
+  const timedItems = items.filter(t => t.time);
+  const allDayItems = items.filter(t => !t.time);
+
+  // 定时任务按时间排序
+  timedItems.sort((a, b) => {
+    if (a.time < b.time) return -1;
+    if (a.time > b.time) return 1;
+    return 0;
+  });
+
+  // 全天任务按 order 排序
+  allDayItems.sort((a, b) => {
     const orderA = a.order !== undefined ? a.order : 999;
     const orderB = b.order !== undefined ? b.order : 999;
     return orderA - orderB;
   });
 
-  listEl.innerHTML = items.map(item => {
-    let carriedBadge = '';
-    let carryClass = '';
-    if (item.carriedFrom) {
-      const days = calcCarriedDays(item.carriedFrom);
-      const level = days >= 3 ? 'carry-danger' : days >= 2 ? 'carry-warn' : 'carry-easy';
-      carryClass = ` carried ${days >= 3 ? 'carry-danger' : ''}`;
-      carriedBadge = `<span class="carried-badge ${level}">顺延${days}天<span class="carried-date">原定${formatCarriedDate(item.carriedFrom)}</span></span>`;
-    }
+  let html = '';
 
-    let repeatBadge = '';
-    if (item.repeat) {
-      const labels = { daily: '每天', weekly: '每周', monthly: '每月', weekdays: '工作日' };
-      const repeatSvg = `<svg class="repeat-badge-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/><path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/><polyline points="12 2 12.5 4.5 10 4"/><polyline points="4 12 3.5 11.5 6 12"/></svg>`;
-      repeatBadge = `<span class="repeat-badge repeat-${item.repeat.type}">${repeatSvg}<span class="repeat-badge-text">${labels[item.repeat.type] || '重复'}</span></span>`;
-    }
+  // 定时任务版块
+  if (timedItems.length > 0) {
+    html += '<div class="todo-section-header"><span class="section-icon">⏰</span> 定时任务</div>';
+    html += '<div class="todo-section timed-section">';
+    html += timedItems.map(item => renderTodoItem(item)).join('');
+    html += '</div>';
+  }
 
-    return `
-      <div class="todo-item priority-${item.priority}${item.done ? ' completed' : ''}${carryClass}" data-id="${item.id}" draggable="true">
-        ${carriedBadge}
-        <button class="todo-checkbox${item.done ? ' checked' : ''}" data-id="${item.id}">${item.done ? '✓' : ''}</button>
-        <div class="todo-info">
-          <div class="todo-text" data-id="${item.id}">${escapeHtml(item.text)}${repeatBadge}</div>
-        </div>
-        <button class="todo-delete" data-id="${item.id}" title="删除">✕</button>
-      </div>
-    `;
-  }).join('');
+  // 全天任务版块
+  if (allDayItems.length > 0) {
+    if (timedItems.length > 0) {
+      html += '<div class="todo-section-header"><span class="section-icon">📋</span> 全天任务</div>';
+    }
+    html += '<div class="todo-section allday-section">';
+    html += allDayItems.map(item => renderTodoItem(item)).join('');
+    html += '</div>';
+  }
+
+  listEl.innerHTML = html;
 
   // 绑定事件
   bindTodoEvents(listEl);
   updateProgressBar();
+}
+
+function renderTodoItem(item) {
+  let carriedBadge = '';
+  let carryClass = '';
+  if (item.carriedFrom) {
+    const days = calcCarriedDays(item.carriedFrom);
+    const level = days >= 3 ? 'carry-danger' : days >= 2 ? 'carry-warn' : 'carry-easy';
+    carryClass = ` carried ${days >= 3 ? 'carry-danger' : ''}`;
+    carriedBadge = `<span class="carried-badge ${level}">delay ${days}d<span class="carried-date">原定${formatCarriedDate(item.carriedFrom)}</span></span>`;
+  }
+
+  let repeatBadge = '';
+  if (item.repeat) {
+    const labels = { daily: '每天', weekly: '每周', monthly: '每月', weekdays: '工作日' };
+    const repeatSvg = `<svg class="repeat-badge-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/><path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/><polyline points="12 2 12.5 4.5 10 4"/><polyline points="4 12 3.5 11.5 6 12"/></svg>`;
+    repeatBadge = `<span class="repeat-badge repeat-${item.repeat.type}">${repeatSvg}<span class="repeat-badge-text">${labels[item.repeat.type] || '重复'}</span></span>`;
+  }
+
+  let timeBadge = '';
+  if (item.time) {
+    timeBadge = `<span class="time-badge">${item.time}</span>`;
+  }
+
+  const virtualClass = item.isVirtual ? ' virtual-todo' : '';
+  const draggable = item.isVirtual ? 'false' : 'true';
+
+  return `
+    <div class="todo-item priority-${item.priority}${item.done ? ' completed' : ''}${carryClass}${virtualClass}" data-id="${item.id}" draggable="${draggable}">
+      ${carriedBadge}
+      <button class="todo-checkbox${item.done ? ' checked' : ''}" data-id="${item.id}">${item.done ? '✓' : ''}</button>
+      <div class="todo-info">
+        <div class="todo-text" data-id="${item.id}">${timeBadge}${escapeHtml(item.text)}${repeatBadge}</div>
+      </div>
+      <button class="todo-delete" data-id="${item.id}" title="删除">✕</button>
+    </div>
+  `;
 }
 
 function bindTodoEvents(listEl) {
@@ -786,7 +898,12 @@ function bindTodoEvents(listEl) {
   listEl.querySelectorAll('.todo-checkbox').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleTodo(btn.dataset.id);
+      const id = btn.dataset.id;
+      if (id.startsWith('virtual_')) {
+        materializeVirtualTodo(id, (realId) => toggleTodo(realId));
+      } else {
+        toggleTodo(id);
+      }
     });
   });
 
@@ -794,7 +911,12 @@ function bindTodoEvents(listEl) {
   listEl.querySelectorAll('.todo-delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      deleteTodo(btn.dataset.id);
+      const id = btn.dataset.id;
+      if (id.startsWith('virtual_')) {
+        // 虚拟任务不需要删除，忽略
+        return;
+      }
+      deleteTodo(id);
     });
   });
 
@@ -802,7 +924,9 @@ function bindTodoEvents(listEl) {
   listEl.querySelectorAll('.todo-text').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      openEditDialog(el.dataset.id);
+      const id = el.dataset.id;
+      if (id.startsWith('virtual_')) return;
+      openEditDialog(id);
     });
   });
 
@@ -850,13 +974,60 @@ function bindTodoEvents(listEl) {
       const [moved] = allItems.splice(fromIndex, 1);
       allItems.splice(toIndex, 0, moved);
 
-      // 更新 order
       allItems.forEach((t, i) => t.order = i);
 
       backupTodosToLocal();
       renderTodoList();
     });
   });
+}
+
+// 将虚拟重复任务实例化为真实待办（用于勾选完成等操作）
+function materializeVirtualTodo(virtualId, callback) {
+  const key = dateKey(selectedDate);
+  const allItems = getTodosForDate(key);
+  const virtualItem = allItems.find(t => t.id === virtualId);
+  if (!virtualItem) return;
+
+  const newItem = {
+    id: tempId(),
+    text: virtualItem.text,
+    priority: virtualItem.priority,
+    done: false,
+    createdAt: new Date().toISOString(),
+    carriedFrom: null,
+    subtasks: [],
+    repeat: virtualItem.repeat,
+    time: virtualItem.time || null,
+    order: (todos[key] || []).length
+  };
+
+  if (!todos[key]) todos[key] = [];
+  todos[key].push(newItem);
+  backupTodosToLocal();
+
+  // 同步到云端
+  if (currentUser) {
+    withTimeout(
+      _supaClient.from('todos').insert({
+        user_id: currentUser.id,
+        date: key,
+        text: newItem.text,
+        priority: newItem.priority,
+        done: false
+      }).select().single(),
+      8000
+    ).then(({ data }) => {
+      if (data) newItem.id = data.id;
+      backupTodosToLocal();
+    }).catch(() => {});
+  }
+
+  renderTodoList();
+  updateTodoHeader();
+  renderCalendar();
+
+  if (callback) callback(newItem.id);
 }
 
 // ========== 编辑待办 ==========
@@ -869,6 +1040,10 @@ function openEditDialog(id) {
   editingTodoDate = key;
 
   document.getElementById('editTodoText').value = item.text;
+
+  // 时间字段
+  const editTimeInput = document.getElementById('editTodoTime');
+  if (editTimeInput) editTimeInput.value = item.time || '';
 
   const dots = document.querySelectorAll('#editPriorityDots .dot-btn');
   dots.forEach(d => d.classList.remove('selected'));
@@ -898,14 +1073,17 @@ function saveEdit() {
   const selectedDot = document.querySelector('#editPriorityDots .dot-btn.selected');
   const priority = selectedDot ? selectedDot.dataset.priority : 'mid';
 
+  const editTimeInput = document.getElementById('editTodoTime');
+  const time = editTimeInput && editTimeInput.value ? editTimeInput.value : null;
+
   const items = todos[editingTodoDate] || [];
   const item = items.find(t => t.id === editingTodoId);
   if (!item) return;
 
   item.text = text;
   item.priority = priority;
+  item.time = time;
 
-  // 云端更新（不阻塞）
   if (!editingTodoId.startsWith('local_')) {
     withTimeout(
       _supaClient.from('todos').update({ text, priority }).eq('id', editingTodoId),
@@ -932,8 +1110,9 @@ async function addTodo() {
 
   const input = document.getElementById('todoInput');
   const addBtn = document.getElementById('addTodoBtn');
+  const timeInput = document.getElementById('todoTimeInput');
   const priority = getSelectedPriority();
-  const text = input.value.trim();
+  let text = input.value.trim();
 
   if (!text) { input.focus(); return; }
 
@@ -948,7 +1127,25 @@ async function addTodo() {
 
   const key = dateKey(selectedDate);
 
-  // 重复任务信息（从弹出面板获取）
+  // 时间处理：优先使用时间选择器，其次从文本解析
+  let time = null;
+  if (timeInput && timeInput.value) {
+    time = timeInput.value; // "HH:MM" 格式
+  } else {
+    // 尝试从文本中提取时间前缀，如 "10:00 开会" 或 "10：00 开会"
+    const timeMatch = text.match(/^(\d{1,2})[：:](\d{2})\s*/);
+    if (timeMatch) {
+      const h = String(timeMatch[1]).padStart(2, '0');
+      const m = timeMatch[2];
+      if (+h < 24 && +m < 60) {
+        time = `${h}:${m}`;
+        text = text.replace(timeMatch[0], '').trim();
+        if (!text) { text = input.value.trim(); time = null; } // 如果去掉时间后没文字，还原
+      }
+    }
+  }
+
+  // 重复任务信息
   let repeat = null;
   const selectedRepeatOption = document.querySelector('#repeatPanel .repeat-option-item.selected');
   if (selectedRepeatOption) {
@@ -975,7 +1172,7 @@ async function addTodo() {
     );
 
     if (error) {
-      addTodoLocally(key, text, priority, repeat);
+      addTodoLocally(key, text, priority, repeat, time);
     } else {
       if (!todos[key]) todos[key] = [];
       todos[key].push({
@@ -987,14 +1184,17 @@ async function addTodo() {
         carriedFrom: data.carried_from || null,
         subtasks: [],
         repeat,
+        time,
         order: todos[key].length
       });
     }
   } catch (err) {
-    addTodoLocally(key, text, priority, repeat);
+    addTodoLocally(key, text, priority, repeat, time);
   }
 
   input.value = '';
+  // 重置时间选择器
+  if (timeInput) timeInput.value = '';
   // 重置重复任务面板
   const repeatBtn = document.getElementById('repeatToggleBtn');
   if (repeatBtn) {
@@ -1015,7 +1215,7 @@ async function addTodo() {
   addBtn.textContent = '添加';
 }
 
-function addTodoLocally(key, text, priority, repeat) {
+function addTodoLocally(key, text, priority, repeat, time) {
   const localId = tempId();
   if (!todos[key]) todos[key] = [];
   todos[key].push({
@@ -1027,6 +1227,7 @@ function addTodoLocally(key, text, priority, repeat) {
     carriedFrom: null,
     subtasks: [],
     repeat,
+    time: time || null,
     order: todos[key].length
   });
   pendingSyncs.push({ type: 'add_todo', localId, date: key, text, priority, done: false });
