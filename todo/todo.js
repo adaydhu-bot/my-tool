@@ -1155,23 +1155,93 @@ function spawnOverlayConfetti() {
   }
 }
 
+// ========== 撤销 Toast 系统 ==========
+let undoTimers = {};
+
+function showUndoToast(message, undoCallback, confirmCallback, duration = 3000) {
+  const container = document.getElementById('undoToastContainer');
+  const id = 'undo_' + Date.now();
+
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast';
+  toast.id = id;
+  toast.innerHTML = `
+    <span class="undo-toast-text">${escapeHtml(message)}</span>
+    <button class="undo-toast-btn">撤销</button>
+    <div class="undo-toast-progress" style="width: 100%;"></div>
+  `;
+
+  container.appendChild(toast);
+
+  const progress = toast.querySelector('.undo-toast-progress');
+  requestAnimationFrame(() => {
+    progress.style.transitionDuration = duration + 'ms';
+    progress.style.width = '0%';
+  });
+
+  const undoBtn = toast.querySelector('.undo-toast-btn');
+  undoBtn.addEventListener('click', () => {
+    clearTimeout(undoTimers[id]);
+    delete undoTimers[id];
+    undoCallback();
+    removeToast(toast);
+  });
+
+  undoTimers[id] = setTimeout(() => {
+    delete undoTimers[id];
+    confirmCallback();
+    removeToast(toast);
+  }, duration);
+
+  return id;
+}
+
+function removeToast(toast) {
+  toast.classList.add('hiding');
+  setTimeout(() => toast.remove(), 300);
+}
+
 async function deleteTodo(id) {
   const key = dateKey(selectedDate);
   if (!todos[key]) return;
 
-  todos[key] = todos[key].filter(t => t.id !== id);
+  const itemIndex = todos[key].findIndex(t => t.id === id);
+  if (itemIndex === -1) return;
+
+  const deletedItem = todos[key][itemIndex];
+  const deletedOrder = itemIndex;
+
+  // 立即从 UI 移除
+  todos[key].splice(itemIndex, 1);
   if (todos[key].length === 0) delete todos[key];
-  // 重新排序
   if (todos[key]) todos[key].forEach((t, i) => t.order = i);
   backupTodosToLocal();
   renderTodoList();
   updateTodoHeader();
   renderCalendar();
 
-  if (!id.startsWith('local_')) {
-    withTimeout(_supaClient.from('todos').delete().eq('id', id), 8000)
-      .catch(e => console.warn('云端删除超时:', e));
-  }
+  const displayText = deletedItem.text.length > 12 ? deletedItem.text.slice(0, 12) + '...' : deletedItem.text;
+
+  showUndoToast(
+    `已删除「${displayText}」`,
+    // 撤销回调
+    () => {
+      if (!todos[key]) todos[key] = [];
+      todos[key].splice(deletedOrder, 0, deletedItem);
+      todos[key].forEach((t, i) => t.order = i);
+      backupTodosToLocal();
+      renderTodoList();
+      updateTodoHeader();
+      renderCalendar();
+    },
+    // 确认删除回调（真正删除云端）
+    () => {
+      if (!id.startsWith('local_')) {
+        withTimeout(_supaClient.from('todos').delete().eq('id', id), 8000)
+          .catch(e => console.warn('云端删除超时:', e));
+      }
+    }
+  );
 }
 
 // ================================================================
@@ -1516,14 +1586,36 @@ function renderIdeasList() {
   listEl.querySelectorAll('.idea-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const deleteId = btn.dataset.id;
-      ideas = ideas.filter(i => i.id !== deleteId);
+      const ideaIndex = ideas.findIndex(i => i.id === deleteId);
+      if (ideaIndex === -1) return;
+
+      const deletedIdea = ideas[ideaIndex];
+
+      // 立即从 UI 移除
+      ideas.splice(ideaIndex, 1);
       backupIdeasToLocal();
       renderIdeasList();
       renderIdeaFilterTags();
-      if (!deleteId.startsWith('local_')) {
-        withTimeout(_supaClient.from('ideas').delete().eq('id', deleteId), 8000)
-          .catch(e => console.warn('云端删除灵感超时:', e));
-      }
+
+      const displayText = deletedIdea.text.length > 12 ? deletedIdea.text.slice(0, 12) + '...' : deletedIdea.text;
+
+      showUndoToast(
+        `已删除灵感「${displayText}」`,
+        // 撤销
+        () => {
+          ideas.splice(ideaIndex, 0, deletedIdea);
+          backupIdeasToLocal();
+          renderIdeasList();
+          renderIdeaFilterTags();
+        },
+        // 确认删除
+        () => {
+          if (!deleteId.startsWith('local_')) {
+            withTimeout(_supaClient.from('ideas').delete().eq('id', deleteId), 8000)
+              .catch(e => console.warn('云端删除灵感超时:', e));
+          }
+        }
+      );
     });
   });
 }
@@ -1885,6 +1977,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const section = document.getElementById(btn.dataset.tab + 'Section');
       if (section) section.classList.add('active');
 
+      // 移除齿轮激活态
+      const csb = document.getElementById('cornerSettingsBtn');
+      if (csb) csb.classList.remove('settings-active');
+
       if (btn.dataset.tab === 'summary') renderSummary();
     });
   });
@@ -1898,6 +1994,24 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
       const settingsSection = document.getElementById('settingsSection');
       if (settingsSection) settingsSection.classList.add('active');
+      // 齿轮变为激活态
+      cornerSettingsBtn.classList.add('settings-active');
+    });
+  }
+
+  // 设置页返回按钮
+  const settingsBackBtn = document.getElementById('settingsBackBtn');
+  if (settingsBackBtn) {
+    settingsBackBtn.addEventListener('click', () => {
+      // 回到第一个 tab（每日待办）
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
+      const firstTab = document.querySelector('.tab-btn[data-tab="todo"]');
+      if (firstTab) firstTab.classList.add('active');
+      const todoSection = document.getElementById('todoSection');
+      if (todoSection) todoSection.classList.add('active');
+      // 移除齿轮激活态
+      if (cornerSettingsBtn) cornerSettingsBtn.classList.remove('settings-active');
     });
   }
 
