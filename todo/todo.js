@@ -120,6 +120,9 @@ function setupAuth() {
       // TOKEN_REFRESHED 等事件不需要重新初始化
       if (appInitialized && event === 'TOKEN_REFRESHED') return;
 
+      // 启动心跳保活
+      startHeartbeat();
+
       // 显示昵称（如果没有昵称则弹窗让用户补填）
       let nickname = session.user.user_metadata?.nickname;
       if (!nickname) {
@@ -148,9 +151,10 @@ function setupAuth() {
         await loadAllData();
         // 如果云端数据为空，尝试从本地备份恢复
         await restoreFromLocalBackup();
-        // 加载完成后备份到本地
-        backupTodosToLocal();
-        backupIdeasToLocal();
+        // 只有有数据时才更新本地备份（防止空数据覆盖好的备份）
+        const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
+        if (todoCount > 0) backupTodosToLocal();
+        if (ideas.length > 0) backupIdeasToLocal();
         initApp(); // 数据加载完后刷新渲染
       } catch (err) {
         console.error('数据加载失败:', err);
@@ -165,6 +169,7 @@ function setupAuth() {
     } else {
       currentUser = null;
       appInitialized = false;
+      stopHeartbeat();
       document.getElementById('app').style.display = 'none';
       overlay.classList.remove('hidden');
     }
@@ -237,15 +242,17 @@ async function loadTodosFromCloud() {
       .eq('user_id', currentUser.id)
       .order('created_at', { ascending: true });
 
-    todos = {};
     if (error) {
       console.error('加载待办失败:', error);
+      // 不清空 todos，保留之前的数据
       return;
     }
+    // 只有查询成功才更新数据
+    const newTodos = {};
     if (data) {
       data.forEach(item => {
-        if (!todos[item.date]) todos[item.date] = [];
-        todos[item.date].push({
+        if (!newTodos[item.date]) newTodos[item.date] = [];
+        newTodos[item.date].push({
           id: item.id,
           text: item.text,
           priority: item.priority,
@@ -255,9 +262,10 @@ async function loadTodosFromCloud() {
         });
       });
     }
+    todos = newTodos;
   } catch (err) {
     console.error('加载待办异常:', err);
-    todos = {};
+    // 不清空 todos，保留之前的数据
   }
 }
 
@@ -269,11 +277,12 @@ async function loadIdeasFromCloud() {
       .eq('user_id', currentUser.id)
       .order('created_at', { ascending: true });
 
-    ideas = [];
     if (error) {
       console.error('加载灵感失败:', error);
+      // 不清空 ideas，保留之前的数据
       return;
     }
+    // 只有查询成功才更新数据
     if (data) {
       ideas = data.map(item => ({
         id: item.id,
@@ -284,7 +293,7 @@ async function loadIdeasFromCloud() {
     }
   } catch (err) {
     console.error('加载灵感异常:', err);
-    ideas = [];
+    // 不清空 ideas，保留之前的数据
   }
 }
 
@@ -1188,6 +1197,32 @@ async function addIdea() {
   backupIdeasToLocal();
   renderIdeasList();
   renderIdeaFilterTags();
+}
+
+// ================================================================
+// 心跳保活：防止 Supabase 数据库因不活跃被暂停
+// ================================================================
+let heartbeatTimer = null;
+
+function startHeartbeat() {
+  if (heartbeatTimer) return;
+  // 每 4 小时发一次轻量查询，保持数据库活跃
+  heartbeatTimer = setInterval(async () => {
+    if (!currentUser) return;
+    try {
+      await _supaClient.from('todos').select('id').limit(1);
+      console.log('心跳保活: OK', new Date().toLocaleTimeString());
+    } catch (e) {
+      console.warn('心跳保活失败:', e);
+    }
+  }, 4 * 60 * 60 * 1000); // 4小时
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
 }
 
 // ================================================================
