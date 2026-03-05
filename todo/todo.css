@@ -611,43 +611,48 @@ body::after {
 
 .todo-input-row input[type="text"] {
   flex: 1;
-  padding: 12px 16px;
+  padding: 14px 18px;
   border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 28px;
   font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.3s;
+  transition: all 0.3s;
   background: var(--input-bg);
   color: var(--text);
 }
 
-.todo-input-row input[type="text"]:focus { border-color: var(--primary); }
-
-.time-input-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
+.todo-input-row input[type="text"]:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(255, 140, 66, 0.1);
 }
 
-.time-input-wrap input[type="time"] {
-  padding: 8px 10px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-  outline: none;
-  background: var(--input-bg);
-  color: var(--text);
-  transition: border-color 0.3s;
-  width: 110px;
-}
-
-.time-input-wrap input[type="time"]:focus { border-color: var(--primary); }
-
-.time-input-label {
-  font-size: 0.68rem;
+.todo-input-row input[type="text"]::placeholder {
   color: var(--text-lighter);
+}
+
+/* 智能识别提示 */
+.smart-hint {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  color: var(--primary-dark);
+  background: rgba(255, 140, 66, 0.06);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 140, 66, 0.3);
+}
+.smart-hint.visible { display: flex; }
+.smart-hint .hint-icon { font-size: 0.9rem; }
+.smart-hint .hint-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  background: rgba(255, 140, 66, 0.12);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.72rem;
 }
 
 .add-todo-form input[type="text"]:focus { border-color: var(--primary); }
@@ -872,17 +877,17 @@ body::after {
 }
 
 .add-todo-btn {
-  padding: 8px 24px;
+  padding: 12px 28px;
   background: linear-gradient(135deg, var(--primary), var(--primary-light));
   color: #fff;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 28px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s;
   white-space: nowrap;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .add-todo-btn:hover:not(:disabled) {
@@ -2037,8 +2042,6 @@ body::after {
   .stat-card { padding: 14px; }
   .todo-options { flex-wrap: wrap; }
   .todo-input-row { flex-direction: column; }
-  .time-input-wrap { flex-direction: row; gap: 6px; width: 100%; }
-  .time-input-wrap input[type="time"] { width: 100%; }
   .idea-form-bottom { flex-direction: column; align-items: stretch; }
   .theme-options { grid-template-columns: repeat(2, 1fr); }
   .water-reminder { top: 10px; left: 12px; }

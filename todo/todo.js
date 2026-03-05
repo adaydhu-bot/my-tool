@@ -1103,6 +1103,41 @@ function getSelectedPriority() {
   return selected ? selected.dataset.priority : 'mid';
 }
 
+// 智能时间识别
+function parseSmartTime(text) {
+  const rangePatterns = [
+    /(\d{1,2})[点时：:](\d{0,2})\s*[到至\-—~～]\s*(\d{1,2})[点时：:]?(\d{0,2})/,
+    /(\d{1,2}):(\d{2})\s*[到至\-—~～]\s*(\d{1,2}):(\d{2})/,
+  ];
+  for (const pat of rangePatterns) {
+    const m = text.match(pat);
+    if (m) {
+      const h1 = m[1].padStart(2, '0');
+      const m1 = (m[2] || '00').padStart(2, '0');
+      const h2 = m[3].padStart(2, '0');
+      const m2 = (m[4] || '00').padStart(2, '0');
+      return { type: 'range', start: `${h1}:${m1}`, end: `${h2}:${m2}` };
+    }
+  }
+  const halfMatch = text.match(/(\d{1,2})[点时]半/);
+  if (halfMatch) {
+    return { type: 'single', start: `${halfMatch[1].padStart(2, '0')}:30` };
+  }
+  const singlePatterns = [
+    /(\d{1,2})[点时：:](\d{0,2})(?:半)?/,
+    /(\d{1,2}):(\d{2})/,
+  ];
+  for (const pat of singlePatterns) {
+    const m = text.match(pat);
+    if (m) {
+      const h = m[1].padStart(2, '0');
+      const min = (m[2] || '00').padStart(2, '0');
+      return { type: 'single', start: `${h}:${min}` };
+    }
+  }
+  return null;
+}
+
 let isAddingTodo = false;
 
 async function addTodo() {
@@ -1110,7 +1145,6 @@ async function addTodo() {
 
   const input = document.getElementById('todoInput');
   const addBtn = document.getElementById('addTodoBtn');
-  const timeInput = document.getElementById('todoTimeInput');
   const priority = getSelectedPriority();
   let text = input.value.trim();
 
@@ -1127,22 +1161,12 @@ async function addTodo() {
 
   const key = dateKey(selectedDate);
 
-  // 时间处理：优先使用时间选择器，其次从文本解析
+  // 智能时间识别
   let time = null;
-  if (timeInput && timeInput.value) {
-    time = timeInput.value; // "HH:MM" 格式
-  } else {
-    // 尝试从文本中提取时间前缀，如 "10:00 开会" 或 "10：00 开会"
-    const timeMatch = text.match(/^(\d{1,2})[：:](\d{2})\s*/);
-    if (timeMatch) {
-      const h = String(timeMatch[1]).padStart(2, '0');
-      const m = timeMatch[2];
-      if (+h < 24 && +m < 60) {
-        time = `${h}:${m}`;
-        text = text.replace(timeMatch[0], '').trim();
-        if (!text) { text = input.value.trim(); time = null; } // 如果去掉时间后没文字，还原
-      }
-    }
+  const parsed = parseSmartTime(text);
+  if (parsed) {
+    time = parsed.start;
+    if (parsed.end) time = parsed.start; // 存起始时间
   }
 
   // 重复任务信息
@@ -1193,8 +1217,9 @@ async function addTodo() {
   }
 
   input.value = '';
-  // 重置时间选择器
-  if (timeInput) timeInput.value = '';
+  // 重置智能识别提示
+  const smartHint = document.getElementById('smartHint');
+  if (smartHint) smartHint.classList.remove('visible');
   // 重置重复任务面板
   const repeatBtn = document.getElementById('repeatToggleBtn');
   if (repeatBtn) {
@@ -2243,6 +2268,30 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('todoInput').addEventListener('keypress', e => {
     if (e.key === 'Enter') addTodo();
   });
+
+  // 智能时间识别实时提示
+  const _todoInput = document.getElementById('todoInput');
+  const _smartHint = document.getElementById('smartHint');
+  const _hintTag = document.getElementById('hintTag');
+  if (_todoInput && _smartHint && _hintTag) {
+    _todoInput.addEventListener('input', function() {
+      const val = this.value.trim();
+      const result = parseSmartTime(val);
+      if (result && val.length > 2) {
+        _smartHint.classList.add('visible');
+        if (result.type === 'range') {
+          _hintTag.textContent = `📅 日程 ${result.start} - ${result.end}`;
+        } else {
+          _hintTag.textContent = `📅 日程 ${result.start}`;
+        }
+      } else if (val.length > 0) {
+        _smartHint.classList.add('visible');
+        _hintTag.textContent = '📝 待办事项';
+      } else {
+        _smartHint.classList.remove('visible');
+      }
+    });
+  }
 
   // 优先级圆点切换
   document.getElementById('priorityDots').addEventListener('click', e => {

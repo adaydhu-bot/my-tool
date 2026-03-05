@@ -101,11 +101,13 @@
           <!-- 添加待办 -->
           <div class="add-todo-form card">
             <div class="todo-input-row">
-              <input type="text" id="todoInput" placeholder="添加新的待办事项..." maxlength="50">
-              <div class="time-input-wrap">
-                <input type="time" id="todoTimeInput" title="设置具体时间（可选）">
-                <span class="time-input-label">时间</span>
-              </div>
+              <input type="text" id="todoInput" placeholder="输入待办或日程，如：15点开会、20-21点跳舞课..." maxlength="50">
+              <button class="add-todo-btn" id="addTodoBtn">添加</button>
+            </div>
+            <div class="smart-hint" id="smartHint">
+              <span class="hint-icon">🔮</span>
+              <span>智能识别：将自动添加为</span>
+              <span class="hint-tag" id="hintTag">📅 日程 14:00</span>
             </div>
             <div class="todo-options">
               <div class="priority-dots" id="priorityDots">
@@ -130,7 +132,6 @@
                   <div class="repeat-option-item" data-type="monthly"><span class="opt-icon">🗓️</span> 每月</div>
                   <div class="repeat-option-item" data-type="weekdays"><span class="opt-icon">💼</span> 仅工作日</div>
                   <div class="repeat-option-item repeat-option-none" data-type="none"><span class="opt-icon">✕</span> 不重复</div>
-                  <!-- 周几/几号 子选项 -->
                   <div class="repeat-sub-options" id="repeatSubOptions" style="display:none;">
                     <select id="repeatWeekday" style="display:none;">
                       <option value="1">周一</option>
@@ -145,7 +146,6 @@
                   </div>
                 </div>
               </div>
-              <button class="add-todo-btn" id="addTodoBtn">添加</button>
             </div>
           </div>
 
