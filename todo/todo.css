@@ -638,36 +638,163 @@ body::after {
 
 .dot-btn.selected::after { opacity: 1; }
 
-/* 重复任务切换 */
-.repeat-toggle {
-  display: flex;
+/* 重复任务设置按钮 */
+.repeat-toggle-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.repeat-toggle-btn {
+  position: relative;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
   cursor: pointer;
-  user-select: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-lighter);
+  padding: 0;
 }
 
-.repeat-toggle input { display: none; }
-
-.repeat-icon {
-  font-size: 1.2rem;
-  opacity: 0.4;
-  transition: all 0.2s;
-  padding: 4px;
+.repeat-toggle-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(255, 140, 66, 0.06);
+  transform: scale(1.05);
 }
 
-.repeat-toggle input:checked + .repeat-icon {
+.repeat-toggle-btn.active {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, rgba(255, 140, 66, 0.12), rgba(255, 209, 102, 0.1));
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(255, 140, 66, 0.2);
+}
+
+.repeat-toggle-btn svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.3s ease;
+}
+
+.repeat-toggle-btn:hover svg {
+  transform: rotate(60deg);
+}
+
+.repeat-toggle-btn.active svg {
+  transform: rotate(0deg);
+}
+
+.repeat-dot {
+  display: none;
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  background: var(--primary);
+  border-radius: 50%;
+  border: 2px solid var(--card-bg);
+}
+
+.repeat-toggle-btn.active .repeat-dot {
+  display: block;
+}
+
+/* 重复选项弹出面板 */
+.repeat-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--card-bg);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  padding: 14px 16px;
+  min-width: 180px;
+  z-index: 100;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.repeat-panel.show {
   opacity: 1;
-  transform: scale(1.1);
+  transform: translateX(-50%) scale(1);
+  pointer-events: auto;
 }
 
-.repeat-options {
+.repeat-panel::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: var(--card-bg);
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.repeat-panel-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-light);
+  margin-bottom: 10px;
+}
+
+.repeat-option-item {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.repeat-option-item:hover {
+  background: rgba(255, 140, 66, 0.08);
+}
+
+.repeat-option-item.selected {
+  background: rgba(255, 140, 66, 0.12);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.repeat-option-item .opt-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+
+.repeat-option-item.selected .opt-icon {
+  background: var(--primary);
+  color: #fff;
+  border-radius: 6px;
+}
+
+.repeat-option-none {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.repeat-sub-options {
   padding: 8px 0 0;
 }
 
-.repeat-options select {
+.repeat-sub-options select {
   padding: 6px 12px;
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
@@ -676,6 +803,7 @@ body::after {
   background: var(--card-bg);
   color: var(--text);
   cursor: pointer;
+  width: 100%;
 }
 
 .add-todo-btn {
@@ -946,18 +1074,82 @@ body::after {
   color: var(--primary);
 }
 
-/* 重复任务标记 */
+/* 重复任务标记 — 默认低调小图标，hover展开胶囊 */
 .repeat-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  background: rgba(255, 140, 66, 0.1);
-  border-radius: 6px;
-  font-size: 0.68rem;
-  color: var(--primary);
+  gap: 0;
+  padding: 1px 4px;
+  background: transparent;
+  border: 1px dashed var(--text-lighter);
+  border-radius: 8px;
+  font-size: 0;
+  color: var(--text-lighter);
   margin-left: 6px;
   vertical-align: middle;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  max-width: 22px;
+  white-space: nowrap;
+  cursor: default;
+  opacity: 0.5;
+}
+
+.repeat-badge .repeat-badge-icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  transition: all 0.35s ease;
+}
+
+.repeat-badge .repeat-badge-text {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.35s ease;
+  margin-left: 0;
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+/* 鼠标悬停任务行时展开胶囊 */
+.todo-item:hover .repeat-badge {
+  gap: 3px;
+  padding: 2px 8px 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  max-width: 100px;
+  opacity: 1;
+  font-size: 0.68rem;
+}
+
+.todo-item:hover .repeat-badge .repeat-badge-text {
+  max-width: 60px;
+  opacity: 1;
+  margin-left: 2px;
+}
+
+/* 不同重复类型的颜色 */
+.todo-item:hover .repeat-badge.repeat-daily {
+  background: rgba(107, 203, 119, 0.12);
+  color: #2d8a3e;
+  border-color: rgba(107, 203, 119, 0.3);
+}
+.todo-item:hover .repeat-badge.repeat-weekly {
+  background: rgba(74, 144, 217, 0.12);
+  color: #2e6db4;
+  border-color: rgba(74, 144, 217, 0.3);
+}
+.todo-item:hover .repeat-badge.repeat-monthly {
+  background: rgba(142, 68, 173, 0.12);
+  color: #7b3fa0;
+  border-color: rgba(142, 68, 173, 0.3);
+}
+.todo-item:hover .repeat-badge.repeat-weekdays {
+  background: rgba(255, 140, 66, 0.12);
+  color: #c76a20;
+  border-color: rgba(255, 140, 66, 0.3);
 }
 
 /* ========== 顺延任务标记 ========== */

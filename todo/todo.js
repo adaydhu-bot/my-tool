@@ -760,7 +760,8 @@ function renderTodoList() {
     let repeatBadge = '';
     if (item.repeat) {
       const labels = { daily: '每天', weekly: '每周', monthly: '每月', weekdays: '工作日' };
-      repeatBadge = `<span class="repeat-badge">🔁 ${labels[item.repeat.type] || '重复'}</span>`;
+      const repeatSvg = `<svg class="repeat-badge-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/><path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/><polyline points="12 2 12.5 4.5 10 4"/><polyline points="4 12 3.5 11.5 6 12"/></svg>`;
+      repeatBadge = `<span class="repeat-badge repeat-${item.repeat.type}">${repeatSvg}<span class="repeat-badge-text">${labels[item.repeat.type] || '重复'}</span></span>`;
     }
 
     // 子任务渲染
@@ -1075,16 +1076,18 @@ async function addTodo() {
 
   const key = dateKey(selectedDate);
 
-  // 重复任务信息
+  // 重复任务信息（从弹出面板获取）
   let repeat = null;
-  const repeatToggle = document.getElementById('repeatToggle');
-  if (repeatToggle && repeatToggle.checked) {
-    const repeatType = document.getElementById('repeatType').value;
-    repeat = { type: repeatType };
-    if (repeatType === 'weekly') {
-      repeat.value = +document.getElementById('repeatWeekday').value;
-    } else if (repeatType === 'monthly') {
-      repeat.value = +document.getElementById('repeatMonthday').value;
+  const selectedRepeatOption = document.querySelector('#repeatPanel .repeat-option-item.selected');
+  if (selectedRepeatOption) {
+    const repeatType = selectedRepeatOption.dataset.type;
+    if (repeatType && repeatType !== 'none') {
+      repeat = { type: repeatType };
+      if (repeatType === 'weekly') {
+        repeat.value = +document.getElementById('repeatWeekday').value;
+      } else if (repeatType === 'monthly') {
+        repeat.value = +document.getElementById('repeatMonthday').value;
+      }
     }
   }
 
@@ -1120,11 +1123,15 @@ async function addTodo() {
   }
 
   input.value = '';
-  // 重置重复任务选项
-  if (repeatToggle) {
-    repeatToggle.checked = false;
-    document.getElementById('repeatOptions').style.display = 'none';
+  // 重置重复任务面板
+  const repeatBtn = document.getElementById('repeatToggleBtn');
+  if (repeatBtn) {
+    repeatBtn.classList.remove('active');
   }
+  document.querySelectorAll('#repeatPanel .repeat-option-item').forEach(o => o.classList.remove('selected'));
+  document.getElementById('repeatSubOptions').style.display = 'none';
+  document.getElementById('repeatWeekday').style.display = 'none';
+  document.getElementById('repeatMonthday').style.display = 'none';
 
   backupTodosToLocal();
   renderTodoList();
@@ -2046,19 +2053,75 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.classList.add('selected');
   });
 
-  // 重复任务切换
-  const repeatToggle = document.getElementById('repeatToggle');
-  if (repeatToggle) {
-    repeatToggle.addEventListener('change', () => {
-      document.getElementById('repeatOptions').style.display = repeatToggle.checked ? 'flex' : 'none';
-    });
-  }
+  // 重复任务弹出面板
+  const repeatToggleBtn = document.getElementById('repeatToggleBtn');
+  const repeatPanel = document.getElementById('repeatPanel');
+  let repeatPanelOpen = false;
 
-  const repeatType = document.getElementById('repeatType');
-  if (repeatType) {
-    repeatType.addEventListener('change', () => {
-      document.getElementById('repeatWeekday').style.display = repeatType.value === 'weekly' ? 'inline-block' : 'none';
-      document.getElementById('repeatMonthday').style.display = repeatType.value === 'monthly' ? 'inline-block' : 'none';
+  if (repeatToggleBtn && repeatPanel) {
+    repeatToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      repeatPanelOpen = !repeatPanelOpen;
+      if (repeatPanelOpen) {
+        repeatPanel.classList.add('show');
+      } else {
+        repeatPanel.classList.remove('show');
+      }
+    });
+
+    repeatPanel.querySelectorAll('.repeat-option-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const type = item.dataset.type;
+
+        if (type === 'none') {
+          // 取消重复
+          repeatPanel.querySelectorAll('.repeat-option-item').forEach(o => o.classList.remove('selected'));
+          repeatToggleBtn.classList.remove('active');
+          document.getElementById('repeatSubOptions').style.display = 'none';
+          document.getElementById('repeatWeekday').style.display = 'none';
+          document.getElementById('repeatMonthday').style.display = 'none';
+        } else {
+          repeatPanel.querySelectorAll('.repeat-option-item').forEach(o => o.classList.remove('selected'));
+          item.classList.add('selected');
+          repeatToggleBtn.classList.add('active');
+
+          // 显示子选项
+          const subOptions = document.getElementById('repeatSubOptions');
+          const weekdaySel = document.getElementById('repeatWeekday');
+          const monthdaySel = document.getElementById('repeatMonthday');
+
+          if (type === 'weekly') {
+            subOptions.style.display = 'block';
+            weekdaySel.style.display = 'block';
+            monthdaySel.style.display = 'none';
+          } else if (type === 'monthly') {
+            subOptions.style.display = 'block';
+            weekdaySel.style.display = 'none';
+            monthdaySel.style.display = 'block';
+          } else {
+            subOptions.style.display = 'none';
+            weekdaySel.style.display = 'none';
+            monthdaySel.style.display = 'none';
+          }
+        }
+
+        // 关闭面板（仅非周/月选项时自动关闭）
+        if (type !== 'weekly' && type !== 'monthly') {
+          setTimeout(() => {
+            repeatPanel.classList.remove('show');
+            repeatPanelOpen = false;
+          }, 200);
+        }
+      });
+    });
+
+    // 点击外部关闭
+    document.addEventListener('click', (e) => {
+      if (repeatPanelOpen && !repeatToggleBtn.contains(e.target) && !repeatPanel.contains(e.target)) {
+        repeatPanel.classList.remove('show');
+        repeatPanelOpen = false;
+      }
     });
   }
 

@@ -102,31 +102,39 @@
                 <button class="dot-btn mid selected" data-priority="mid" title="中优先级"></button>
                 <button class="dot-btn low" data-priority="low" title="低优先级"></button>
               </div>
-              <label class="repeat-toggle" title="设为重复任务">
-                <input type="checkbox" id="repeatToggle">
-                <span class="repeat-icon">🔁</span>
-              </label>
+              <div class="repeat-toggle-wrap" id="repeatToggleWrap">
+                <button class="repeat-toggle-btn" id="repeatToggleBtn" title="设为重复任务">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/>
+                    <path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/>
+                    <polyline points="12 2 12.5 4.5 10 4"/>
+                    <polyline points="4 12 3.5 11.5 6 12"/>
+                  </svg>
+                  <span class="repeat-dot" id="repeatDot"></span>
+                </button>
+                <div class="repeat-panel" id="repeatPanel">
+                  <div class="repeat-panel-title">重复类型</div>
+                  <div class="repeat-option-item" data-type="daily"><span class="opt-icon">📅</span> 每天</div>
+                  <div class="repeat-option-item" data-type="weekly"><span class="opt-icon">📆</span> 每周</div>
+                  <div class="repeat-option-item" data-type="monthly"><span class="opt-icon">🗓️</span> 每月</div>
+                  <div class="repeat-option-item" data-type="weekdays"><span class="opt-icon">💼</span> 仅工作日</div>
+                  <div class="repeat-option-item repeat-option-none" data-type="none"><span class="opt-icon">✕</span> 不重复</div>
+                  <!-- 周几/几号 子选项 -->
+                  <div class="repeat-sub-options" id="repeatSubOptions" style="display:none;">
+                    <select id="repeatWeekday" style="display:none;">
+                      <option value="1">周一</option>
+                      <option value="2">周二</option>
+                      <option value="3">周三</option>
+                      <option value="4">周四</option>
+                      <option value="5">周五</option>
+                      <option value="6">周六</option>
+                      <option value="0">周日</option>
+                    </select>
+                    <select id="repeatMonthday" style="display:none;"></select>
+                  </div>
+                </div>
+              </div>
               <button class="add-todo-btn" id="addTodoBtn">添加</button>
-            </div>
-            <!-- 重复任务选项（默认隐藏） -->
-            <div class="repeat-options" id="repeatOptions" style="display:none;">
-              <select id="repeatType">
-                <option value="daily">每天</option>
-                <option value="weekly">每周</option>
-                <option value="monthly">每月</option>
-                <option value="weekdays">仅工作日</option>
-              </select>
-              <select id="repeatWeekday" style="display:none;">
-                <option value="1">周一</option>
-                <option value="2">周二</option>
-                <option value="3">周三</option>
-                <option value="4">周四</option>
-                <option value="5">周五</option>
-                <option value="6">周六</option>
-                <option value="0">周日</option>
-              </select>
-              <select id="repeatMonthday" style="display:none;">
-              </select>
             </div>
           </div>
 
