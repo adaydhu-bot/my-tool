@@ -65,7 +65,9 @@ async function processPendingSyncs() {
             date: task.date,
             text: task.text,
             priority: task.priority,
-            done: task.done
+            done: task.done,
+            time: task.time || null,
+            end_time: task.endTime || null
           }).select().single()
         );
         if (!error && data) {
@@ -290,7 +292,9 @@ async function carryOverUnfinishedTodos() {
           text: task.text,
           priority: task.priority,
           done: false,
-          carried_from: task.originalDate
+          carried_from: task.originalDate,
+          time: task.time || null,
+          end_time: task.endTime || null
         }).select().single(),
         8000
       );
@@ -383,7 +387,9 @@ function generateRepeatingTodos() {
               date: today,
               text: newItem.text,
               priority: newItem.priority,
-              done: false
+              done: false,
+              time: newItem.time || null,
+              end_time: newItem.endTime || null
             }).select().single(),
             8000
           ).then(({ data }) => {
@@ -511,8 +517,8 @@ async function loadTodosFromCloud() {
           carriedFrom: item.carried_from || null,
           subtasks: [],
           repeat: null,
-          time: null,
-          endTime: null,
+          time: item.time || null,
+          endTime: item.end_time || null,
           order: newTodos[item.date].length
         };
         newTodos[item.date].push(todoItem);
@@ -655,7 +661,9 @@ async function restoreFromLocalBackup() {
                 text: item.text,
                 priority: item.priority,
                 done: item.done,
-                carried_from: item.carriedFrom || null
+                carried_from: item.carriedFrom || null,
+                time: item.time || null,
+                end_time: item.endTime || null
               }).select().single(),
               8000
             );
@@ -1193,7 +1201,9 @@ function materializeVirtualTodo(virtualId, callback) {
         date: key,
         text: newItem.text,
         priority: newItem.priority,
-        done: false
+        done: false,
+        time: newItem.time || null,
+        end_time: newItem.endTime || null
       }).select().single(),
       8000
     ).then(({ data }) => {
@@ -1314,7 +1324,7 @@ function saveEdit() {
 
   if (!editingTodoId.startsWith('local_')) {
     withTimeout(
-      _supaClient.from('todos').update({ text, priority }).eq('id', editingTodoId),
+      _supaClient.from('todos').update({ text, priority, time: time || null, end_time: endTime || null }).eq('id', editingTodoId),
       8000
     ).catch(e => console.warn('编辑同步失败:', e));
   }
@@ -1436,7 +1446,9 @@ async function addTodo() {
         date: key,
         text,
         priority,
-        done: false
+        done: false,
+        time: time || null,
+        end_time: endTime || null
       }).select().single()
     );
 
@@ -1502,7 +1514,7 @@ function addTodoLocally(key, text, priority, repeat, time, endTime) {
     endTime: endTime || null,
     order: todos[key].length
   });
-  pendingSyncs.push({ type: 'add_todo', localId, date: key, text, priority, done: false });
+  pendingSyncs.push({ type: 'add_todo', localId, date: key, text, priority, done: false, time: time || null, endTime: endTime || null });
 }
 
 async function toggleTodo(id) {
