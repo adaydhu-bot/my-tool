@@ -208,32 +208,39 @@ function setupAuth() {
 
       appInitialized = true;
 
-      try {
-        await loadAllData();
-        await restoreFromLocalBackup();
-        const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
-        if (todoCount > 0) backupTodosToLocal();
-        if (ideas.length > 0) backupIdeasToLocal();
-      } catch (err) {
-        console.error('数据加载失败:', err);
-      }
-      try {
-        await carryOverUnfinishedTodos();
-        generateRepeatingTodos();
-        backupTodosToLocal();
-      } catch (err) {
-        console.error('顺延/重复任务处理失败:', err);
-      }
+      // ====== 快速启动：先用本地缓存立即渲染 UI ======
+      const localTodos = getLocalTodosBackup();
+      const localIdeas = getLocalIdeasBackup();
+      if (localTodos) todos = localTodos;
+      if (localIdeas) ideas = localIdeas;
 
-      // 所有数据加载完毕后，只调用一次 initApp
+      // 立即渲染 UI（用缓存数据），消除白屏等待
       initApp();
-
-      // 加载设置
       loadSettings();
-      // 启动喝水提醒
       initWaterReminder();
-      // 启动待办提醒
       initTodoReminder();
+
+      // ====== 后台异步加载云端数据，完成后静默刷新 ======
+      (async () => {
+        try {
+          await loadAllData();
+          await restoreFromLocalBackup();
+          const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
+          if (todoCount > 0) backupTodosToLocal();
+          if (ideas.length > 0) backupIdeasToLocal();
+        } catch (err) {
+          console.error('数据加载失败:', err);
+        }
+        try {
+          await carryOverUnfinishedTodos();
+          generateRepeatingTodos();
+          backupTodosToLocal();
+        } catch (err) {
+          console.error('顺延/重复任务处理失败:', err);
+        }
+        // 云端数据加载完毕，静默刷新 UI
+        initApp();
+      })();
     } else {
       currentUser = null;
       appInitialized = false;
