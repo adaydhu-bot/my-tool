@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全局预览 - 方案B2 优化布局</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #FF8C42;
+      --primary-light: #FFB07A;
+      --primary-dark: #E67530;
+      --secondary: #FFD166;
+      --bg: #FFF8F0;
+      --card-bg: #FFFFFF;
+      --text: #4A3728;
+      --text-light: #A08B7A;
+      --text-lighter: #C4B5A8;
+      --border: #F0E6DD;
+      --success: #6BCB77;
+      --danger: #FF6B6B;
+      --priority-high: #FF6B6B;
+      --priority-mid: #FFD166;
+      --priority-low: #6BCB77;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 4px 20px rgba(255, 140, 66, 0.12);
+      --shadow-hover: 0 8px 30px rgba(255, 140, 66, 0.2);
+      --input-bg: #FDFAF7;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: -120px; right: -80px;
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(255, 209, 102, 0.2) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: -100px; left: -60px;
+      width: 350px; height: 350px;
+      background: radial-gradient(circle, rgba(255, 140, 66, 0.12) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    #app {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* ===== 右上角时钟 ===== */
+    .corner-clock {
+      position: fixed;
+      top: 16px; right: 24px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-light);
+      font-size: 0.82rem;
+      opacity: 0.7;
+      z-index: 100;
+      user-select: none;
+    }
+    .clock-time { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .clock-sep { font-size: 0.7rem; opacity: 0.5; }
+    .clock-date { font-weight: 400; font-size: 0.78rem; }
+    .corner-settings-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px; height: 26px;
+      border: none; border-radius: 50%;
+      background: transparent;
+      color: var(--text-light);
+      cursor: pointer;
+      margin-left: 6px;
+      opacity: 0.6;
+      transition: all 0.3s;
+    }
+    .corner-settings-btn:hover {
+      opacity: 1;
+      color: var(--primary);
+      background: rgba(255, 140, 66, 0.08);
+      transform: rotate(45deg);
+    }
+    .corner-settings-btn svg { width: 16px; height: 16px; }
+
+    /* ===== 头部 ===== */
+    .header { text-align: center; padding: 30px 0 10px; }
+    .header h1 {
+      font-size: 2.4rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+    .subtitle { color: var(--text-light); font-size: 1rem; margin-top: 6px; }
+
+    /* ===== 导航标签 ===== */
+    .tab-nav {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 20px auto 24px;
+      background: var(--card-bg);
+      border-radius: 30px;
+      padding: 6px;
+      box-shadow: var(--shadow);
+      max-width: 580px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 24px;
+      background: transparent;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-light);
+      cursor: pointer;
+      transition: all 0.3s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--primary); background: rgba(255, 140, 66, 0.08); }
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(255, 140, 66, 0.35);
+    }
+
+    /* ===== 通用卡片 ===== */
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ===== 添加表单（全宽） ===== */
+    .add-form-section { margin-bottom: 16px; }
+    .add-todo-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .todo-input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .todo-input-row input[type="text"] {
+      flex: 1;
+      padding: 14px 18px;
+      border: 2px solid var(--border);
+      border-radius: 28px;
+      font-size: 0.95rem;
+      outline: none;
+      background: var(--input-bg);
+      color: var(--text);
+      transition: all 0.3s;
+    }
+    .todo-input-row input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(255, 140, 66, 0.1);
+    }
+    .todo-input-row input[type="text"]::placeholder {
+      color: var(--text-lighter);
+    }
+    .smart-hint {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      color: var(--primary-dark);
+      background: rgba(255, 140, 66, 0.06);
+      border-radius: 8px;
+      border: 1px dashed rgba(255, 140, 66, 0.3);
+    }
+    .smart-hint.visible { display: flex; }
+    .smart-hint .hint-icon { font-size: 0.9rem; }
+    .smart-hint .hint-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 8px;
+      background: rgba(255, 140, 66, 0.12);
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.72rem;
+    }
+    .todo-options {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .priority-dots { display: flex; gap: 8px; align-items: center; }
+    .dot-btn {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      cursor: pointer;
+      transition: all 0.25s;
+      padding: 0;
+      outline: none;
+      position: relative;
+    }
+    .dot-btn:hover { transform: scale(1.18); }
+    .dot-btn.high { background: var(--priority-high); }
+    .dot-btn.mid { background: var(--priority-mid); }
+    .dot-btn.low { background: var(--priority-low); }
+    .dot-btn.selected {
+      border-color: var(--text);
+      transform: scale(1.18);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    }
+    .dot-btn.selected::after {
+      content: '✓';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .add-todo-btn {
+      padding: 12px 28px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: #fff;
+      border: none;
+      border-radius: 28px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .add-todo-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(255, 140, 66, 0.35);
+    }
+
+    /* ===== 进度条（全宽）===== */
+    .progress-section { margin-bottom: 16px; }
+    .progress-card { padding: 14px 20px; }
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .progress-label { font-size: 0.85rem; color: var(--text-light); font-weight: 600; }
+    .progress-count { font-size: 0.85rem; color: var(--text-light); }
+    .progress-count span { color: var(--primary); font-weight: 700; font-size: 1rem; }
+    .progress-track {
+      height: 8px;
+      background: var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 10px;
+      background: linear-gradient(90deg, var(--primary-light), var(--primary));
+      width: 40%;
+      transition: width 0.6s;
+    }
+
+    /* ===== 主布局：左右两栏 ===== */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    /* ===== 左侧：日历 + 日程 ===== */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ===== 日历 ===== */
+    .calendar-panel { padding: 20px; }
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .cal-title { font-size: 1.05rem; font-weight: 700; }
+    .cal-nav-btn {
+      width: 32px; height: 32px;
+      border: none; border-radius: 50%;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1.2rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .cal-nav-btn:hover { background: var(--primary); color: #fff; }
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .calendar-weekdays span {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      font-weight: 600;
+      padding: 4px 0;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .cal-day {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      position: relative;
+      transition: all 0.2s;
+    }
+    .cal-day:hover { background: rgba(255, 140, 66, 0.12); }
+    .cal-day.other-month { color: var(--text-lighter); }
+    .cal-day.today { background: var(--primary); color: #fff; font-weight: 700; }
+    .cal-day.has-todos::after {
+      content: '';
+      position: absolute;
+      bottom: 2px;
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+    .cal-day.today.has-todos::after { background: #fff; }
+    .today-btn {
+      width: 100%;
+      margin-top: 12px;
+      padding: 8px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-light);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .today-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* ===== 日程面板标题 ===== */
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 0 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .section-title .icon { font-size: 1.1rem; }
+    .section-title .count {
+      margin-left: auto;
+      font-size: 0.72rem;
+      color: var(--text-lighter);
+      font-weight: 500;
+      background: var(--bg);
+      padding: 2px 10px;
+      border-radius: 10px;
+    }
+
+    /* ===== 日程时间轴 ===== */
+    .schedule-panel .timeline {
+      position: relative;
+      padding: 0 8px 0 52px;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 38px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--primary), rgba(255, 140, 66, 0.1));
+      border-radius: 2px;
+    }
+    .t-item {
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      margin-bottom: 4px;
+    }
+    .t-item::before {
+      content: '';
+      position: absolute;
+      left: -20px;
+      top: 14px;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: 2px solid var(--card-bg);
+      box-shadow: 0 0 0 2px rgba(255, 140, 66, 0.2);
+      z-index: 1;
+    }
+    .t-item.done::before {
+      background: var(--success);
+      box-shadow: 0 0 0 2px rgba(107, 203, 119, 0.2);
+    }
+    .t-item.now::before {
+      background: var(--danger);
+      box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.25);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.25); }
+      50% { box-shadow: 0 0 0 6px rgba(255, 107, 107, 0.1); }
+    }
+    .t-time {
+      position: absolute;
+      left: -50px;
+      top: 8px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+      text-align: right;
+      width: 28px;
+      font-variant-numeric: tabular-nums;
+    }
+    .t-card {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .t-card:hover { background: rgba(255, 140, 66, 0.05); }
+    .t-card .t-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .t-card .t-title.text-done {
+      text-decoration: line-through;
+      color: var(--text-lighter);
+    }
+    .t-card .t-span {
+      font-size: 0.7rem;
+      color: var(--text-lighter);
+      margin-top: 2px;
+    }
+    .t-status {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 8px;
+      border-radius: 8px;
+      font-size: 0.65rem;
+      font-weight: 600;
+    }
+    .t-status.s-done { background: rgba(107, 203, 119, 0.15); color: #2d8a3e; }
+    .t-status.s-now { background: rgba(255, 107, 107, 0.12); color: #d63031; }
+    .t-status.s-upcoming { background: rgba(255, 140, 66, 0.1); color: var(--primary-dark); }
+
+    /* ===== 右侧 - 待办清单 ===== */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .todo-panel .date-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .todo-panel .date-title h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+    .todo-panel .date-title .badge {
+      font-size: 0.82rem;
+      color: var(--text-light);
+      background: var(--bg);
+      padding: 4px 14px;
+      border-radius: 12px;
+    }
+    .todo-panel .todo-list { padding: 0; }
+    .todo-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 8px;
+      border-bottom: 1px solid var(--border);
+      border-left: 3px solid transparent;
+      border-radius: 4px;
+      transition: background 0.2s;
+      position: relative;
+    }
+    .todo-item:hover { background: rgba(255, 140, 66, 0.03); }
+    .todo-item:last-child { border-bottom: none; }
+    .todo-item.p-high { border-left-color: var(--danger); }
+    .todo-item.p-mid { border-left-color: var(--secondary); }
+    .todo-item.p-low { border-left-color: var(--success); }
+
+    .chk {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 0; color: #fff;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .chk.checked { background: var(--success); border-color: var(--success); font-size: 0.65rem; }
+    .todo-text { flex: 1; font-size: 0.88rem; }
+    .todo-text.done-text { text-decoration: line-through; color: var(--text-lighter); }
+    .carried {
+      font-size: 0.62rem;
+      padding: 2px 8px;
+      border-radius: 8px;
+      color: #fff;
+      white-space: nowrap;
+      font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+      letter-spacing: 0.5px;
+    }
+    .carried.mild { background: linear-gradient(135deg, var(--primary-light), var(--primary)); }
+    .carried.warn { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); }
+    .carried.danger { background: linear-gradient(135deg, #FF6B6B, #FF4757); }
+    .del {
+      width: 22px; height: 22px;
+      border: none; border-radius: 50%;
+      background: transparent;
+      color: var(--text-lighter);
+      cursor: pointer;
+      font-size: 0.75rem;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0;
+      transition: all 0.2s;
+    }
+    .todo-item:hover .del { opacity: 1; }
+    .del:hover { background: rgba(255, 107, 107, 0.12); color: var(--danger); }
+
+    /* ===== 筛选按钮 ===== */
+    .todo-filters {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .filter-btn {
+      padding: 5px 12px;
+      border: 2px solid var(--border);
+      border-radius: 16px;
+      background: transparent;
+      font-size: 0.78rem;
+      color: var(--text-light);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* ===== 水滴 ===== */
+    .water-reminder {
+      position: fixed;
+      top: 16px; left: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      z-index: 100;
+      cursor: pointer;
+      user-select: none;
+    }
+    .water-timer {
+      font-size: 0.68rem;
+      color: var(--text-light);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 820px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ===== 预览标记 ===== */
+    .preview-tag {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 8px 18px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: #fff;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      box-shadow: 0 4px 15px rgba(255, 140, 66, 0.4);
+      z-index: 200;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 右上角时钟 -->
+    <div class="corner-clock">
+      <span class="clock-time" id="clockTime">14:30</span>
+      <span class="clock-sep">·</span>
+      <span class="clock-date" id="clockDate">3月5日 周四</span>
+      <button class="corner-settings-btn" title="设置">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10" cy="10" r="3"/>
+          <path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M3.4 3.4l1.4 1.4M15.2 15.2l1.4 1.4M3.4 16.6l1.4-1.4M15.2 4.8l1.4-1.4"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- 水滴 -->
+    <div class="water-reminder">
+      <svg viewBox="0 0 60 80" width="36" height="48">
+        <defs>
+          <clipPath id="dropClip">
+            <path d="M30 5 Q30 5 15 40 Q5 55 15 68 Q22 78 30 78 Q38 78 45 68 Q55 55 45 40 Q30 5 30 5Z"/>
+          </clipPath>
+          <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#64B5F6"/>
+            <stop offset="100%" stop-color="#1E88E5"/>
+          </linearGradient>
+        </defs>
+        <path d="M30 5 Q30 5 15 40 Q5 55 15 68 Q22 78 30 78 Q38 78 45 68 Q55 55 45 40 Q30 5 30 5Z" fill="none" stroke="#B0D4F1" stroke-width="2"/>
+        <rect clip-path="url(#dropClip)" x="0" y="40" width="60" height="80" fill="url(#waterGrad)"/>
+      </svg>
+      <span class="water-timer">18:42</span>
+    </div>
+
+    <!-- 头部 -->
+    <header class="header">
+      <h1>Ada's To Do List</h1>
+      <p class="subtitle">Hi Ada，记录每一天，捕捉每个灵感 ✨</p>
+    </header>
+
+    <!-- 导航标签 -->
+    <nav class="tab-nav">
+      <button class="tab-btn active">📝 每日待办</button>
+      <button class="tab-btn">💡 灵感记录</button>
+      <button class="tab-btn">📊 总结统计</button>
+    </nav>
+
+    <!-- 添加表单（全宽） -->
+    <div class="add-form-section">
+      <div class="add-todo-form card">
+        <div class="todo-input-row">
+          <input type="text" id="todoInput" placeholder="输入待办或日程，如：15点开会、20-21点跳舞课...">
+          <button class="add-todo-btn">添加</button>
+        </div>
+        <div class="smart-hint" id="smartHint">
+          <span class="hint-icon">🔮</span>
+          <span>智能识别：将自动添加为</span>
+          <span class="hint-tag" id="hintTag">📅 日程 14:00-15:00</span>
+        </div>
+        <div class="todo-options">
+          <div class="priority-dots">
+            <button class="dot-btn high" title="高优先级"></button>
+            <button class="dot-btn mid selected" title="中优先级"></button>
+            <button class="dot-btn low" title="低优先级"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 进度条（全宽） -->
+    <div class="progress-section">
+      <div class="progress-card card">
+        <div class="progress-info">
+          <span class="progress-label">今日进度</span>
+          <span class="progress-count"><span>4</span> / 10 完成</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width: 40%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 主布局：左右两栏 ===== -->
+    <div class="main-layout">
+      <!-- 左侧：日历 + 日程 -->
+      <div class="left-col">
+        <!-- 日历 -->
+        <div class="calendar-panel card">
+          <div class="calendar-header">
+            <button class="cal-nav-btn">‹</button>
+            <span class="cal-title">2026年3月</span>
+            <button class="cal-nav-btn">›</button>
+          </div>
+          <div class="calendar-weekdays">
+            <span>日</span><span>一</span><span>二</span><span>三</span>
+            <span>四</span><span>五</span><span>六</span>
+          </div>
+          <div class="calendar-grid" id="calGrid"></div>
+          <button class="today-btn">回到今天</button>
+        </div>
+
+        <!-- 今日日程 -->
+        <div class="schedule-panel card">
+          <div class="section-title">
+            <span class="icon">📅</span> 今日日程
+            <span class="count">4 项</span>
+          </div>
+          <div class="timeline">
+            <div class="t-item done">
+              <div class="t-time">09:00</div>
+              <div class="t-card">
+                <div class="t-title text-done">团队晨会 <span class="t-status s-done">✓ 已结束</span></div>
+                <div class="t-span">09:00 - 10:00 · 1小时</div>
+              </div>
+            </div>
+            <div class="t-item done">
+              <div class="t-time">10:00</div>
+              <div class="t-card">
+                <div class="t-title text-done">产品需求评审 <span class="t-status s-done">✓ 已结束</span></div>
+                <div class="t-span">10:00 - 11:00 · 1小时</div>
+              </div>
+            </div>
+            <div class="t-item now">
+              <div class="t-time">13:00</div>
+              <div class="t-card" style="background: rgba(255, 107, 107, 0.05);">
+                <div class="t-title">跳舞课 <span class="t-status s-now">● 进行中</span></div>
+                <div class="t-span">13:00 - 14:00 · 1小时</div>
+              </div>
+            </div>
+            <div class="t-item">
+              <div class="t-time">16:00</div>
+              <div class="t-card">
+                <div class="t-title">项目复盘会 <span class="t-status s-upcoming">待开始</span></div>
+                <div class="t-span">16:00 - 17:00 · 1小时</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：待办事项 -->
+      <div class="right-col">
+        <div class="todo-panel card">
+          <div class="date-title">
+            <h2>📋 待办事项</h2>
+            <span class="badge">2/6 完成</span>
+          </div>
+          <div class="todo-filters">
+            <button class="filter-btn active">全部</button>
+            <button class="filter-btn">未完成</button>
+            <button class="filter-btn">已完成</button>
+          </div>
+          <div class="todo-list">
+            <div class="todo-item p-high">
+              <div class="chk checked">✓</div>
+              <span class="todo-text done-text">写音频汇报大纲</span>
+              <span class="carried mild">delay 1d</span>
+              <button class="del">✕</button>
+            </div>
+            <div class="todo-item p-high">
+              <div class="chk checked">✓</div>
+              <span class="todo-text done-text">联系简历对象发测试题</span>
+              <span class="carried danger">delay 3d</span>
+              <button class="del">✕</button>
+            </div>
+            <div class="todo-item p-mid">
+              <div class="chk"></div>
+              <span class="todo-text">帮梓潇检查音乐设置</span>
+              <span class="carried mild">delay 1d</span>
+              <button class="del">✕</button>
+            </div>
+            <div class="todo-item p-mid">
+              <div class="chk"></div>
+              <span class="todo-text">报销插件</span>
+              <span class="carried mild">delay 1d</span>
+              <button class="del">✕</button>
+            </div>
+            <div class="todo-item p-low">
+              <div class="chk"></div>
+              <span class="todo-text">统计增量回复琛哥</span>
+              <button class="del">✕</button>
+            </div>
+            <div class="todo-item p-low">
+              <div class="chk"></div>
+              <span class="todo-text">同步最新音频功能设计</span>
+              <button class="del">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 预览标记 -->
+  <div class="preview-tag">方案B3 · 智能识别</div>
+
+  <script>
+    // 生成日历
+    (function() {
+      const grid = document.getElementById('calGrid');
+      const year = 2026, month = 2;
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const prevDays = new Date(year, month, 0).getDate();
+      const today = 5;
+      const hasTodosDays = [3, 4, 5, 6, 9, 12, 15, 18, 20, 25];
+
+      let html = '';
+      for (let i = firstDay - 1; i >= 0; i--) {
+        html += `<button class="cal-day other-month">${prevDays - i}</button>`;
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        let cls = 'cal-day';
+        if (d === today) cls += ' today';
+        if (hasTodosDays.includes(d)) cls += ' has-todos';
+        html += `<button class="${cls}">${d}</button>`;
+      }
+      const total = firstDay + daysInMonth;
+      const remain = (7 - total % 7) % 7;
+      for (let d = 1; d <= remain; d++) {
+        html += `<button class="cal-day other-month">${d}</button>`;
+      }
+      grid.innerHTML = html;
+    })();
+
+    // 实时时钟
+    function updateClock() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clockTime').textContent = `${h}:${m}`;
+      const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      document.getElementById('clockDate').textContent = `${now.getMonth() + 1}月${now.getDate()}日 ${weekDays[now.getDay()]}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // 智能时间识别
+    const todoInput = document.getElementById('todoInput');
+    const smartHint = document.getElementById('smartHint');
+    const hintTag = document.getElementById('hintTag');
+
+    function parseTime(text) {
+      // 匹配各种时间格式
+      const patterns = [
+        // "20点到21点" / "20点-21点" / "20-21点"
+        /(\d{1,2})[点时：:](\d{0,2})\s*[到至\-—~～]\s*(\d{1,2})[点时：:]?(\d{0,2})/,
+        // "14:00-15:00" / "14:00~15:00"
+        /(\d{1,2}):(\d{2})\s*[到至\-—~～]\s*(\d{1,2}):(\d{2})/,
+        // 单个时间 "15点" / "3点半" / "14:30"
+        /(\d{1,2})[点时：:](\d{0,2})(?:半)?/,
+        /(\d{1,2}):(\d{2})/,
+      ];
+
+      // 先尝试匹配时间段
+      const rangeMatch = text.match(patterns[0]) || text.match(patterns[1]);
+      if (rangeMatch) {
+        const h1 = rangeMatch[1].padStart(2, '0');
+        const m1 = (rangeMatch[2] || '00').padStart(2, '0');
+        const h2 = rangeMatch[3].padStart(2, '0');
+        const m2 = (rangeMatch[4] || '00').padStart(2, '0');
+        return { type: 'range', start: `${h1}:${m1}`, end: `${h2}:${m2}` };
+      }
+
+      // 再尝试匹配单个时间（只记录起始时间，不生成结束时间）
+      const halfMatch = text.match(/(\d{1,2})[点时]半/);
+      if (halfMatch) {
+        const h = halfMatch[1].padStart(2, '0');
+        return { type: 'single', start: `${h}:30` };
+      }
+
+      const singleMatch = text.match(patterns[2]) || text.match(patterns[3]);
+      if (singleMatch) {
+        const h = singleMatch[1].padStart(2, '0');
+        const m = (singleMatch[2] || '00').padStart(2, '0');
+        return { type: 'single', start: `${h}:${m}` };
+      }
+
+      return null;
+    }
+
+    todoInput.addEventListener('input', function() {
+      const val = this.value.trim();
+      const result = parseTime(val);
+
+      if (result && val.length > 2) {
+        smartHint.classList.add('visible');
+        if (result.type === 'range') {
+          hintTag.textContent = `📅 日程 ${result.start} - ${result.end}`;
+        } else {
+          hintTag.textContent = `📅 日程 ${result.start}`;
+        }
+      } else if (val.length > 0) {
+        smartHint.classList.add('visible');
+        hintTag.textContent = '📝 待办事项';
+      } else {
+        smartHint.classList.remove('visible');
+      }
+    });
+
+    // 优先级选择
+    document.querySelectorAll('.dot-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.dot-btn').forEach(b => b.classList.remove('selected'));
+        this.classList.add('selected');
+      });
+    });
+  </script>
+</body>
+</html>

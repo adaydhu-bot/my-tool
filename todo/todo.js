@@ -791,16 +791,33 @@ function updateTodoHeader() {
 
 function renderTodoList() {
   const key = dateKey(selectedDate);
-  const listEl = document.getElementById('todoList');
   let items = getTodosForDate(key);
 
+  // 分为定时任务（日程）和全天任务（待办）
+  const timedItems = items.filter(t => t.time);
+  const allDayItems = items.filter(t => !t.time);
+
+  // 渲染左侧日程面板
+  renderSchedulePanel(timedItems);
+
+  // 右侧只显示全天待办
+  let filteredItems = [...allDayItems];
   if (currentFilter === 'active') {
-    items = items.filter(t => !t.done);
+    filteredItems = filteredItems.filter(t => !t.done);
   } else if (currentFilter === 'completed') {
-    items = items.filter(t => t.done);
+    filteredItems = filteredItems.filter(t => t.done);
   }
 
-  if (items.length === 0) {
+  const listEl = document.getElementById('todoList');
+
+  // 更新右侧面板 badge
+  const panelBadge = document.getElementById('todoPanelBadge');
+  if (panelBadge) {
+    const doneTodos = allDayItems.filter(t => t.done).length;
+    panelBadge.textContent = `${doneTodos}/${allDayItems.length} 完成`;
+  }
+
+  if (filteredItems.length === 0) {
     const tips = {
       all: '还没有待办事项，添加一个吧~',
       active: '所有任务都完成啦，太棒了！🎉',
@@ -811,49 +828,100 @@ function renderTodoList() {
     return;
   }
 
-  // 分为定时任务和全天任务
-  const timedItems = items.filter(t => t.time);
-  const allDayItems = items.filter(t => !t.time);
-
-  // 定时任务按时间排序
-  timedItems.sort((a, b) => {
-    if (a.time < b.time) return -1;
-    if (a.time > b.time) return 1;
-    return 0;
-  });
-
   // 全天任务按 order 排序
-  allDayItems.sort((a, b) => {
+  filteredItems.sort((a, b) => {
     const orderA = a.order !== undefined ? a.order : 999;
     const orderB = b.order !== undefined ? b.order : 999;
     return orderA - orderB;
   });
 
   let html = '';
-
-  // 定时任务版块
-  if (timedItems.length > 0) {
-    html += '<div class="todo-section-header"><span class="section-icon">⏰</span> 定时任务</div>';
-    html += '<div class="todo-section timed-section">';
-    html += timedItems.map(item => renderTodoItem(item)).join('');
-    html += '</div>';
-  }
-
-  // 全天任务版块
-  if (allDayItems.length > 0) {
-    if (timedItems.length > 0) {
-      html += '<div class="todo-section-header"><span class="section-icon">📋</span> 全天任务</div>';
-    }
-    html += '<div class="todo-section allday-section">';
-    html += allDayItems.map(item => renderTodoItem(item)).join('');
-    html += '</div>';
-  }
-
+  html += filteredItems.map(item => renderTodoItem(item)).join('');
   listEl.innerHTML = html;
 
   // 绑定事件
   bindTodoEvents(listEl);
   updateProgressBar();
+}
+
+// 渲染左侧日程时间轴面板
+function renderSchedulePanel(timedItems) {
+  const timeline = document.getElementById('scheduleTimeline');
+  const countEl = document.getElementById('scheduleCount');
+
+  if (!timeline) return;
+
+  // 排序
+  timedItems.sort((a, b) => {
+    if (a.time < b.time) return -1;
+    if (a.time > b.time) return 1;
+    return 0;
+  });
+
+  if (countEl) countEl.textContent = `${timedItems.length} 项`;
+
+  if (timedItems.length === 0) {
+    timeline.innerHTML = '<p class="empty-tip schedule-empty">今天没有日程安排</p>';
+    return;
+  }
+
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const isToday = dateKey(selectedDate) === todayKey();
+
+  let html = '';
+  timedItems.forEach(item => {
+    const [h, m] = item.time.split(':').map(Number);
+    const itemMinutes = h * 60 + m;
+    const endMinutes = itemMinutes + 60; // 默认1小时
+
+    let statusClass = '';
+    let statusHtml = '';
+    let titleClass = '';
+    let cardStyle = '';
+
+    if (item.done) {
+      statusClass = 'done';
+      statusHtml = '<span class="t-status s-done">✓ 已结束</span>';
+      titleClass = ' text-done';
+    } else if (isToday && nowMinutes >= itemMinutes && nowMinutes < endMinutes) {
+      statusClass = 'now';
+      statusHtml = '<span class="t-status s-now">● 进行中</span>';
+      cardStyle = ' style="background: rgba(255, 107, 107, 0.05);"';
+    } else if (isToday && nowMinutes >= endMinutes) {
+      statusClass = 'done';
+      statusHtml = '<span class="t-status s-done">已结束</span>';
+      titleClass = ' text-done';
+    } else {
+      statusHtml = '<span class="t-status s-upcoming">待开始</span>';
+    }
+
+    const endH = String(Math.floor(endMinutes / 60) % 24).padStart(2, '0');
+    const endM = String(endMinutes % 60).padStart(2, '0');
+    const timeStr = `${item.time} - ${endH}:${endM} · 1小时`;
+
+    html += `
+      <div class="t-item ${statusClass}" data-id="${item.id}">
+        <div class="t-time">${item.time}</div>
+        <div class="t-card"${cardStyle}>
+          <div class="t-title${titleClass}">${escapeHtml(item.text)} ${statusHtml}</div>
+          <div class="t-span">${timeStr}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  timeline.innerHTML = html;
+
+  // 绑定日程点击事件（勾选完成/编辑）
+  timeline.querySelectorAll('.t-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      if (id && !id.startsWith('virtual_')) {
+        toggleTodo(id);
+      }
+    });
+  });
 }
 
 function renderTodoItem(item) {
@@ -1345,6 +1413,8 @@ function updateProgressBar() {
   const fill = document.getElementById('progressFill');
   const doneEl = document.getElementById('progressDone');
   const totalEl = document.getElementById('progressTotal');
+
+  if (!bar) return;
 
   if (allItems.length === 0) {
     bar.classList.remove('show');

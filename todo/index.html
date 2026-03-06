@@ -75,93 +75,115 @@
 
     <!-- ==================== 每日待办模块 ==================== -->
     <section class="tab-content active" id="todoSection">
-      <div class="todo-layout">
-        <!-- 左侧日历 -->
-        <div class="calendar-panel card">
-          <div class="calendar-header">
-            <button class="cal-nav-btn" id="prevMonth">‹</button>
-            <span class="cal-title" id="calTitle"></span>
-            <button class="cal-nav-btn" id="nextMonth">›</button>
-          </div>
-          <div class="calendar-weekdays">
-            <span>日</span><span>一</span><span>二</span><span>三</span>
-            <span>四</span><span>五</span><span>六</span>
-          </div>
-          <div class="calendar-grid" id="calendarGrid"></div>
-          <button class="today-btn" id="todayBtn">回到今天</button>
-        </div>
+      <!-- 日期标题（全宽） -->
+      <div class="todo-date-header card">
+        <h2 id="selectedDateTitle">今天的待办</h2>
+        <span class="todo-progress" id="todoProgress"></span>
+      </div>
 
-        <!-- 右侧待办列表 -->
-        <div class="todo-panel">
-          <div class="todo-date-header card">
-            <h2 id="selectedDateTitle">今天的待办</h2>
-            <span class="todo-progress" id="todoProgress"></span>
+      <!-- 添加待办（全宽） -->
+      <div class="add-form-section">
+        <div class="add-todo-form card">
+          <div class="todo-input-row">
+            <input type="text" id="todoInput" placeholder="输入待办或日程，如：15点开会、20-21点跳舞课..." maxlength="50">
+            <button class="add-todo-btn" id="addTodoBtn">添加</button>
           </div>
-
-          <!-- 添加待办 -->
-          <div class="add-todo-form card">
-            <div class="todo-input-row">
-              <input type="text" id="todoInput" placeholder="输入待办或日程，如：15点开会、20-21点跳舞课..." maxlength="50">
-              <button class="add-todo-btn" id="addTodoBtn">添加</button>
+          <div class="smart-hint" id="smartHint">
+            <span class="hint-icon">🔮</span>
+            <span>智能识别：将自动添加为</span>
+            <span class="hint-tag" id="hintTag">📅 日程 14:00</span>
+          </div>
+          <div class="todo-options">
+            <div class="priority-dots" id="priorityDots">
+              <button class="dot-btn high" data-priority="high" title="高优先级"></button>
+              <button class="dot-btn mid selected" data-priority="mid" title="中优先级"></button>
+              <button class="dot-btn low" data-priority="low" title="低优先级"></button>
             </div>
-            <div class="smart-hint" id="smartHint">
-              <span class="hint-icon">🔮</span>
-              <span>智能识别：将自动添加为</span>
-              <span class="hint-tag" id="hintTag">📅 日程 14:00</span>
-            </div>
-            <div class="todo-options">
-              <div class="priority-dots" id="priorityDots">
-                <button class="dot-btn high" data-priority="high" title="高优先级"></button>
-                <button class="dot-btn mid selected" data-priority="mid" title="中优先级"></button>
-                <button class="dot-btn low" data-priority="low" title="低优先级"></button>
-              </div>
-              <div class="repeat-toggle-wrap" id="repeatToggleWrap">
-                <button class="repeat-toggle-btn" id="repeatToggleBtn" title="设为重复任务">
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/>
-                    <path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/>
-                    <polyline points="12 2 12.5 4.5 10 4"/>
-                    <polyline points="4 12 3.5 11.5 6 12"/>
-                  </svg>
-                  <span class="repeat-dot" id="repeatDot"></span>
-                </button>
-                <div class="repeat-panel" id="repeatPanel">
-                  <div class="repeat-panel-title">重复类型</div>
-                  <div class="repeat-option-item" data-type="daily"><span class="opt-icon">📅</span> 每天</div>
-                  <div class="repeat-option-item" data-type="weekly"><span class="opt-icon">📆</span> 每周</div>
-                  <div class="repeat-option-item" data-type="monthly"><span class="opt-icon">🗓️</span> 每月</div>
-                  <div class="repeat-option-item" data-type="weekdays"><span class="opt-icon">💼</span> 仅工作日</div>
-                  <div class="repeat-option-item repeat-option-none" data-type="none"><span class="opt-icon">✕</span> 不重复</div>
-                  <div class="repeat-sub-options" id="repeatSubOptions" style="display:none;">
-                    <select id="repeatWeekday" style="display:none;">
-                      <option value="1">周一</option>
-                      <option value="2">周二</option>
-                      <option value="3">周三</option>
-                      <option value="4">周四</option>
-                      <option value="5">周五</option>
-                      <option value="6">周六</option>
-                      <option value="0">周日</option>
-                    </select>
-                    <select id="repeatMonthday" style="display:none;"></select>
-                  </div>
+            <div class="repeat-toggle-wrap" id="repeatToggleWrap">
+              <button class="repeat-toggle-btn" id="repeatToggleBtn" title="设为重复任务">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/>
+                  <path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/>
+                  <polyline points="12 2 12.5 4.5 10 4"/>
+                  <polyline points="4 12 3.5 11.5 6 12"/>
+                </svg>
+                <span class="repeat-dot" id="repeatDot"></span>
+              </button>
+              <div class="repeat-panel" id="repeatPanel">
+                <div class="repeat-panel-title">重复类型</div>
+                <div class="repeat-option-item" data-type="daily"><span class="opt-icon">📅</span> 每天</div>
+                <div class="repeat-option-item" data-type="weekly"><span class="opt-icon">📆</span> 每周</div>
+                <div class="repeat-option-item" data-type="monthly"><span class="opt-icon">🗓️</span> 每月</div>
+                <div class="repeat-option-item" data-type="weekdays"><span class="opt-icon">💼</span> 仅工作日</div>
+                <div class="repeat-option-item repeat-option-none" data-type="none"><span class="opt-icon">✕</span> 不重复</div>
+                <div class="repeat-sub-options" id="repeatSubOptions" style="display:none;">
+                  <select id="repeatWeekday" style="display:none;">
+                    <option value="1">周一</option>
+                    <option value="2">周二</option>
+                    <option value="3">周三</option>
+                    <option value="4">周四</option>
+                    <option value="5">周五</option>
+                    <option value="6">周六</option>
+                    <option value="0">周日</option>
+                  </select>
+                  <select id="repeatMonthday" style="display:none;"></select>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          <!-- 今日进度条 -->
-          <div class="todo-progress-bar card" id="todoProgressBar">
-            <div class="progress-info">
-              <span class="progress-label">今日进度</span>
-              <span class="progress-count"><span id="progressDone">0</span> / <span id="progressTotal">0</span> 完成</span>
+      <!-- 今日进度条（全宽） -->
+      <div class="progress-section">
+        <div class="todo-progress-bar card" id="todoProgressBar">
+          <div class="progress-info">
+            <span class="progress-label">今日进度</span>
+            <span class="progress-count"><span id="progressDone">0</span> / <span id="progressTotal">0</span> 完成</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主布局：左右两栏 -->
+      <div class="main-layout">
+        <!-- 左侧：日历 + 今日日程 -->
+        <div class="left-col">
+          <div class="calendar-panel card">
+            <div class="calendar-header">
+              <button class="cal-nav-btn" id="prevMonth">‹</button>
+              <span class="cal-title" id="calTitle"></span>
+              <button class="cal-nav-btn" id="nextMonth">›</button>
             </div>
-            <div class="progress-track">
-              <div class="progress-fill" id="progressFill"></div>
+            <div class="calendar-weekdays">
+              <span>日</span><span>一</span><span>二</span><span>三</span>
+              <span>四</span><span>五</span><span>六</span>
             </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+            <button class="today-btn" id="todayBtn">回到今天</button>
           </div>
 
-          <!-- 待办列表 -->
-          <div class="todo-list-container card">
+          <!-- 今日日程面板 -->
+          <div class="schedule-panel card" id="schedulePanel">
+            <div class="section-title">
+              <span class="icon">📅</span> 今日日程
+              <span class="count" id="scheduleCount">0 项</span>
+            </div>
+            <div class="timeline" id="scheduleTimeline">
+              <p class="empty-tip schedule-empty">今天没有日程安排</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：待办事项 -->
+        <div class="right-col">
+          <div class="todo-panel card">
+            <div class="todo-panel-header">
+              <h2>📋 待办事项</h2>
+              <span class="todo-panel-badge" id="todoPanelBadge">0/0 完成</span>
+            </div>
             <div class="todo-filters">
               <button class="filter-btn active" data-filter="all">全部</button>
               <button class="filter-btn" data-filter="active">未完成</button>

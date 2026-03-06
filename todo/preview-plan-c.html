@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>方案C - Tab切换</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #FF8C42;
+      --primary-light: #FFB07A;
+      --primary-dark: #E67530;
+      --secondary: #FFD166;
+      --bg: #FFF8F0;
+      --card-bg: #FFFFFF;
+      --text: #4A3728;
+      --text-light: #A08B7A;
+      --text-lighter: #C4B5A8;
+      --border: #F0E6DD;
+      --success: #6BCB77;
+      --danger: #FF6B6B;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 4px 20px rgba(255, 140, 66, 0.12);
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 700px; margin: 0 auto; }
+    .plan-tag {
+      display: inline-block;
+      padding: 4px 14px;
+      background: linear-gradient(135deg, #27AE60, #6BCB77);
+      color: #fff;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 1.6rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
+    }
+    .desc { color: var(--text-light); font-size: 0.88rem; margin-bottom: 24px; }
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    /* ===== 内嵌 Tab ===== */
+    .inner-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 14px 20px 0;
+    }
+    .inner-tab {
+      position: relative;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 12px 12px 0 0;
+      background: transparent;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-light);
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .inner-tab:hover { color: var(--primary); }
+    .inner-tab.active {
+      background: var(--bg);
+      color: var(--primary);
+    }
+    .inner-tab .tab-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      margin-left: 6px;
+      color: #fff;
+    }
+    .inner-tab .tab-badge.schedule-badge { background: var(--primary); }
+    .inner-tab .tab-badge.todo-badge { background: var(--success); }
+
+    .tab-body {
+      background: var(--bg);
+      margin: 0 20px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) var(--radius-sm);
+      padding: 16px;
+      min-height: 300px;
+    }
+    .tab-pane { display: none; animation: fadeUp 0.3s ease; }
+    .tab-pane.active { display: block; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ===== 日程时间轴（完整版） ===== */
+    .full-timeline {
+      position: relative;
+      padding-left: 80px;
+    }
+    .full-timeline::before {
+      content: '';
+      position: absolute;
+      left: 60px;
+      top: 0;
+      bottom: 0;
+      width: 2.5px;
+      background: linear-gradient(to bottom, var(--primary) 0%, var(--primary-light) 40%, rgba(255,140,66,0.15) 100%);
+      border-radius: 2px;
+    }
+    .ft-item {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    /* 时间节点圆 */
+    .ft-item::before {
+      content: '';
+      position: absolute;
+      left: -26px;
+      top: 16px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--card-bg);
+      border: 3px solid var(--primary);
+      z-index: 1;
+    }
+    .ft-item.done::before { border-color: var(--success); background: var(--success); }
+    .ft-item.now::before {
+      border-color: var(--danger);
+      background: var(--danger);
+      box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.2);
+      animation: pulse2 2s infinite;
+    }
+    @keyframes pulse2 {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.2); }
+      50% { box-shadow: 0 0 0 8px rgba(255, 107, 107, 0.05); }
+    }
+
+    .ft-time {
+      position: absolute;
+      left: -74px;
+      top: 12px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      width: 40px;
+    }
+    .ft-card {
+      background: var(--card-bg);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      transition: all 0.2s;
+    }
+    .ft-card:hover { box-shadow: 0 4px 16px rgba(255,140,66,0.12); transform: translateX(2px); }
+    .ft-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ft-checkbox {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 0; color: #fff;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .ft-checkbox.checked { background: var(--success); border-color: var(--success); font-size: 0.65rem; }
+    .ft-name { flex: 1; font-size: 0.9rem; font-weight: 600; }
+    .ft-name.text-done { text-decoration: line-through; color: var(--text-lighter); font-weight: 500; }
+    .ft-tag {
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    .ft-tag.tag-done { background: rgba(107,203,119,0.15); color: #2d8a3e; }
+    .ft-tag.tag-now { background: rgba(255,107,107,0.12); color: #d63031; }
+    .ft-tag.tag-later { background: rgba(255,140,66,0.1); color: var(--primary-dark); }
+    .ft-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 6px;
+      font-size: 0.72rem;
+      color: var(--text-lighter);
+    }
+    .ft-meta .ft-duration { display: flex; align-items: center; gap: 3px; }
+
+    /* 时间分隔线（如"现在"） */
+    .now-divider {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0;
+      padding-left: 0;
+    }
+    .now-divider::before {
+      content: '';
+      position: absolute;
+      left: -26px;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      transform: translateY(-50%);
+      border-radius: 50%;
+      background: var(--danger);
+      z-index: 1;
+    }
+    .now-line {
+      flex: 1;
+      height: 2px;
+      background: linear-gradient(to right, var(--danger), transparent);
+      border-radius: 1px;
+    }
+    .now-text {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--danger);
+      white-space: nowrap;
+    }
+
+    /* ===== 待办列表 ===== */
+    .td-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      background: var(--card-bg);
+      border-radius: var(--radius-sm);
+      margin-bottom: 8px;
+      border-left: 3px solid transparent;
+      transition: all 0.2s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+    .td-item:hover { box-shadow: 0 4px 12px rgba(255,140,66,0.08); transform: translateX(2px); }
+    .td-item.p-high { border-left-color: var(--danger); }
+    .td-item.p-mid { border-left-color: var(--secondary); }
+    .td-item.p-low { border-left-color: var(--success); }
+    .td-chk {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 0; color: #fff;
+      cursor: pointer;
+    }
+    .td-chk.checked { background: var(--success); border-color: var(--success); font-size: 0.65rem; }
+    .td-text { flex: 1; font-size: 0.88rem; }
+    .td-text.done { text-decoration: line-through; color: var(--text-lighter); }
+    .td-carried {
+      font-size: 0.62rem;
+      padding: 2px 8px;
+      border-radius: 8px;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .td-carried.warn { background: linear-gradient(135deg, var(--primary), var(--secondary)); }
+    .td-carried.danger { background: linear-gradient(135deg, #FF6B6B, #FF4757); }
+    .td-del {
+      width: 22px; height: 22px;
+      border: none; border-radius: 50%;
+      background: transparent;
+      color: var(--text-lighter);
+      cursor: pointer;
+      font-size: 0.75rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .td-del:hover { background: rgba(255,107,107,0.12); color: var(--danger); }
+
+    .summary-bar {
+      display: flex;
+      gap: 12px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+    }
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.78rem;
+      color: var(--text-light);
+    }
+    .summary-item strong { color: var(--text); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <span class="plan-tag">方案 C</span>
+    <h1>Tab 切换布局</h1>
+    <p class="desc">日程和待办通过内嵌 Tab 切换，各自拥有完整空间</p>
+
+    <div class="main-card card">
+      <!-- Tab 头部 -->
+      <div class="inner-tabs">
+        <button class="inner-tab active" onclick="switchTab('schedule')">
+          📅 日程 <span class="tab-badge schedule-badge">4</span>
+        </button>
+        <button class="inner-tab" onclick="switchTab('todo')">
+          ✏️ 待办 <span class="tab-badge todo-badge">6</span>
+        </button>
+      </div>
+
+      <!-- 日程面板 -->
+      <div class="tab-body">
+        <div class="tab-pane active" id="schedulePane">
+          <div class="full-timeline">
+            <div class="ft-item done">
+              <div class="ft-time">09:00</div>
+              <div class="ft-card">
+                <div class="ft-row">
+                  <div class="ft-checkbox checked">✓</div>
+                  <span class="ft-name text-done">团队晨会</span>
+                  <span class="ft-tag tag-done">✓ 已结束</span>
+                </div>
+                <div class="ft-meta">
+                  <span class="ft-duration">⏱ 09:00 - 10:00</span>
+                  <span>1 小时</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ft-item done">
+              <div class="ft-time">10:00</div>
+              <div class="ft-card">
+                <div class="ft-row">
+                  <div class="ft-checkbox checked">✓</div>
+                  <span class="ft-name text-done">产品需求评审</span>
+                  <span class="ft-tag tag-done">✓ 已结束</span>
+                </div>
+                <div class="ft-meta">
+                  <span class="ft-duration">⏱ 10:00 - 11:00</span>
+                  <span>1 小时</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="now-divider">
+              <span class="now-text">现在 11:30</span>
+              <div class="now-line"></div>
+            </div>
+
+            <div class="ft-item now">
+              <div class="ft-time">13:00</div>
+              <div class="ft-card" style="border-left: 3px solid var(--danger);">
+                <div class="ft-row">
+                  <div class="ft-checkbox"></div>
+                  <span class="ft-name">跳舞课</span>
+                  <span class="ft-tag tag-later">即将开始</span>
+                </div>
+                <div class="ft-meta">
+                  <span class="ft-duration">⏱ 13:00 - 14:00</span>
+                  <span>1 小时</span>
+                  <span style="color: var(--danger);">· 1.5h 后开始</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ft-item">
+              <div class="ft-time">16:00</div>
+              <div class="ft-card">
+                <div class="ft-row">
+                  <div class="ft-checkbox"></div>
+                  <span class="ft-name">项目复盘会</span>
+                  <span class="ft-tag tag-later">待开始</span>
+                </div>
+                <div class="ft-meta">
+                  <span class="ft-duration">⏱ 16:00 - 17:00</span>
+                  <span>1 小时</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="todoPane">
+          <div class="td-item p-high">
+            <div class="td-chk checked">✓</div>
+            <span class="td-text done">写音频汇报大纲</span>
+            <span class="td-carried warn">顺延1天</span>
+            <button class="td-del">✕</button>
+          </div>
+          <div class="td-item p-high">
+            <div class="td-chk checked">✓</div>
+            <span class="td-text done">联系简历对象发测试题</span>
+            <span class="td-carried danger">顺延3天</span>
+            <button class="td-del">✕</button>
+          </div>
+          <div class="td-item p-mid">
+            <div class="td-chk"></div>
+            <span class="td-text">帮梓潇检查音乐设置</span>
+            <span class="td-carried warn">顺延1天</span>
+            <button class="td-del">✕</button>
+          </div>
+          <div class="td-item p-mid">
+            <div class="td-chk"></div>
+            <span class="td-text">报销插件</span>
+            <span class="td-carried warn">顺延1天</span>
+            <button class="td-del">✕</button>
+          </div>
+          <div class="td-item p-low">
+            <div class="td-chk"></div>
+            <span class="td-text">统计增量回复琛哥</span>
+            <button class="td-del">✕</button>
+          </div>
+          <div class="td-item p-low">
+            <div class="td-chk"></div>
+            <span class="td-text">同步最新音频功能设计</span>
+            <button class="td-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部汇总 -->
+      <div class="summary-bar">
+        <div class="summary-item">📅 日程 <strong>2</strong>/4 完成</div>
+        <div class="summary-item">✏️ 待办 <strong>2</strong>/6 完成</div>
+        <div class="summary-item" style="margin-left: auto; color: var(--primary);">📊 总进度 <strong>40%</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(name) {
+      document.querySelectorAll('.inner-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      if (name === 'schedule') {
+        document.querySelectorAll('.inner-tab')[0].classList.add('active');
+        document.getElementById('schedulePane').classList.add('active');
+      } else {
+        document.querySelectorAll('.inner-tab')[1].classList.add('active');
+        document.getElementById('todoPane').classList.add('active');
+      }
+    }
+  </script>
+</body>
+</html>

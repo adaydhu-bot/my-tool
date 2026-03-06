@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>方案A - 上下布局</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #FF8C42;
+      --primary-light: #FFB07A;
+      --primary-dark: #E67530;
+      --secondary: #FFD166;
+      --bg: #FFF8F0;
+      --card-bg: #FFFFFF;
+      --text: #4A3728;
+      --text-light: #A08B7A;
+      --text-lighter: #C4B5A8;
+      --border: #F0E6DD;
+      --success: #6BCB77;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 4px 20px rgba(255, 140, 66, 0.12);
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 700px; margin: 0 auto; }
+    .plan-tag {
+      display: inline-block;
+      padding: 4px 14px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: #fff;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 1.6rem;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
+    }
+    .desc { color: var(--text-light); font-size: 0.88rem; margin-bottom: 24px; }
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px 20px 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .section-title .icon { font-size: 1.1rem; }
+    .section-title .count {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--text-lighter);
+      font-weight: 500;
+    }
+
+    /* ===== 日程模块 - 时间轴 ===== */
+    .schedule-card { margin-bottom: 16px; }
+    .timeline {
+      position: relative;
+      padding: 0 20px 16px 72px;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 52px;
+      top: 0;
+      bottom: 16px;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--primary), rgba(255, 140, 66, 0.15));
+      border-radius: 2px;
+    }
+    .timeline-item {
+      position: relative;
+      padding: 10px 14px;
+      margin-bottom: 4px;
+      border-radius: var(--radius-sm);
+      transition: background 0.2s;
+    }
+    .timeline-item:hover { background: rgba(255, 140, 66, 0.04); }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -26px;
+      top: 16px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: 2px solid var(--card-bg);
+      box-shadow: 0 0 0 2px rgba(255, 140, 66, 0.2);
+      z-index: 1;
+    }
+    .timeline-item.completed::before {
+      background: var(--success);
+      box-shadow: 0 0 0 2px rgba(107, 203, 119, 0.2);
+    }
+    .timeline-item .time-range {
+      position: absolute;
+      left: -66px;
+      top: 10px;
+      width: 36px;
+      text-align: right;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--primary-dark);
+      line-height: 1.3;
+      font-variant-numeric: tabular-nums;
+    }
+    .timeline-item .time-range .end-time {
+      color: var(--text-lighter);
+      font-weight: 500;
+    }
+    .schedule-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .schedule-checkbox {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 0;
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .schedule-checkbox.checked {
+      background: var(--success);
+      border-color: var(--success);
+      font-size: 0.65rem;
+    }
+    .schedule-text {
+      font-size: 0.92rem;
+      color: var(--text);
+    }
+    .schedule-text.done {
+      text-decoration: line-through;
+      color: var(--text-lighter);
+    }
+    .schedule-duration {
+      margin-left: auto;
+      font-size: 0.72rem;
+      color: var(--text-lighter);
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+    .current-time-line {
+      position: relative;
+      height: 2px;
+      background: #FF6B6B;
+      margin: 8px 0;
+      border-radius: 2px;
+    }
+    .current-time-line::before {
+      content: '现在';
+      position: absolute;
+      left: -50px;
+      top: -7px;
+      font-size: 0.65rem;
+      color: #FF6B6B;
+      font-weight: 600;
+    }
+    .current-time-line::after {
+      content: '';
+      position: absolute;
+      left: -6px;
+      top: -3px;
+      width: 8px;
+      height: 8px;
+      background: #FF6B6B;
+      border-radius: 50%;
+    }
+
+    /* 空日程 */
+    .empty-schedule {
+      padding: 20px;
+      text-align: center;
+      color: var(--text-lighter);
+      font-size: 0.85rem;
+    }
+
+    /* ===== 待办模块 ===== */
+    .todo-card { }
+    .todo-list { padding: 0 20px 16px; }
+    .todo-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .todo-item:last-child { border-bottom: none; }
+    .todo-checkbox {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 0;
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .todo-checkbox.checked {
+      background: var(--success);
+      border-color: var(--success);
+      font-size: 0.65rem;
+    }
+    .todo-text { font-size: 0.92rem; flex: 1; }
+    .todo-text.done { text-decoration: line-through; color: var(--text-lighter); }
+    .priority-line {
+      width: 3px; height: 20px; border-radius: 2px; flex-shrink: 0;
+    }
+    .priority-high { background: #FF6B6B; }
+    .priority-mid { background: #FFD166; }
+    .priority-low { background: #6BCB77; }
+    .carried-tag {
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 8px;
+      color: #fff;
+      white-space: nowrap;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+    }
+    .carried-tag.danger { background: linear-gradient(135deg, #FF6B6B, #FF4757); }
+    .delete-btn {
+      width: 24px; height: 24px;
+      border: none; border-radius: 50%;
+      background: transparent;
+      color: var(--text-lighter);
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .delete-btn:hover { background: rgba(255, 107, 107, 0.12); color: #FF6B6B; }
+
+    .divider { height: 1px; background: var(--border); margin: 0 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <span class="plan-tag">方案 A</span>
+    <h1>上下布局</h1>
+    <p class="desc">日程在上方（带时间轴），待办在下方，自上而下浏览</p>
+
+    <!-- 日程模块 -->
+    <div class="schedule-card card">
+      <div class="section-title">
+        <span class="icon">📅</span> 今日日程
+        <span class="count">3 项</span>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item completed">
+          <div class="time-range">09:00<br><span class="end-time">10:00</span></div>
+          <div class="schedule-content">
+            <div class="schedule-checkbox checked">✓</div>
+            <span class="schedule-text done">团队晨会</span>
+            <span class="schedule-duration">1小时</span>
+          </div>
+        </div>
+
+        <div class="timeline-item completed">
+          <div class="time-range">10:00<br><span class="end-time">11:00</span></div>
+          <div class="schedule-content">
+            <div class="schedule-checkbox checked">✓</div>
+            <span class="schedule-text done">产品需求评审</span>
+            <span class="schedule-duration">1小时</span>
+          </div>
+        </div>
+
+        <div class="current-time-line"></div>
+
+        <div class="timeline-item">
+          <div class="time-range">14:00<br><span class="end-time">15:30</span></div>
+          <div class="schedule-content">
+            <div class="schedule-checkbox"></div>
+            <span class="schedule-text">跳舞课</span>
+            <span class="schedule-duration">1.5小时</span>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="time-range">16:00<br><span class="end-time">17:00</span></div>
+          <div class="schedule-content">
+            <div class="schedule-checkbox"></div>
+            <span class="schedule-text">项目复盘会</span>
+            <span class="schedule-duration">1小时</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 待办模块 -->
+    <div class="todo-card card">
+      <div class="section-title">
+        <span class="icon">✏️</span> 待办事项
+        <span class="count">2/6 已完成</span>
+      </div>
+      <div class="todo-list">
+        <div class="todo-item">
+          <div class="priority-line priority-high"></div>
+          <div class="todo-checkbox checked">✓</div>
+          <span class="todo-text done">写音频汇报大纲</span>
+          <span class="carried-tag">顺延1天</span>
+          <button class="delete-btn">✕</button>
+        </div>
+        <div class="todo-item">
+          <div class="priority-line priority-high"></div>
+          <div class="todo-checkbox checked">✓</div>
+          <span class="todo-text done">联系简历对象发测试题</span>
+          <span class="carried-tag danger">顺延3天</span>
+          <button class="delete-btn">✕</button>
+        </div>
+        <div class="todo-item">
+          <div class="priority-line priority-mid"></div>
+          <div class="todo-checkbox"></div>
+          <span class="todo-text">帮梓潇检查音乐设置</span>
+          <span class="carried-tag">顺延1天</span>
+          <button class="delete-btn">✕</button>
+        </div>
+        <div class="todo-item">
+          <div class="priority-line priority-mid"></div>
+          <div class="todo-checkbox"></div>
+          <span class="todo-text">报销插件</span>
+          <button class="delete-btn">✕</button>
+        </div>
+        <div class="todo-item">
+          <div class="priority-line priority-low"></div>
+          <div class="todo-checkbox"></div>
+          <span class="todo-text">统计增量回复琛哥</span>
+          <button class="delete-btn">✕</button>
+        </div>
+        <div class="todo-item">
+          <div class="priority-line priority-low"></div>
+          <div class="todo-checkbox"></div>
+          <span class="todo-text">同步最新音频功能设计</span>
+          <button class="delete-btn">✕</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
