@@ -915,8 +915,10 @@ function renderTodoList() {
     return;
   }
 
-  // 全天任务按 order 排序
+  // 全天任务排序：未完成在上，已完成沉底；同组内按 order 排序
   filteredItems.sort((a, b) => {
+    // 已完成的排到最后
+    if (a.done !== b.done) return a.done ? 1 : -1;
     const orderA = a.order !== undefined ? a.order : 999;
     const orderB = b.order !== undefined ? b.order : 999;
     return orderA - orderB;
