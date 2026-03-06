@@ -1591,14 +1591,19 @@ body::after {
 .edit-time-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .edit-time-row label {
   font-size: 0.9rem;
   color: var(--text-light);
   white-space: nowrap;
+}
+
+.end-time-label {
+  margin-left: 4px;
 }
 
 .time-input-group {

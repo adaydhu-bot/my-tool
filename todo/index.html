@@ -386,14 +386,19 @@
       <h3>编辑待办</h3>
       <input type="text" id="editTodoText" placeholder="待办内容" maxlength="50">
       <div class="edit-time-row" id="editTimeRow">
-        <label>时间：</label>
+        <label>开始：</label>
         <div class="time-input-group">
           <input type="text" id="editTimeHour" class="time-input" maxlength="2" placeholder="HH" inputmode="numeric">
           <span class="time-colon">:</span>
           <input type="text" id="editTimeMinute" class="time-input" maxlength="2" placeholder="MM" inputmode="numeric">
         </div>
+        <label class="end-time-label">结束：</label>
+        <div class="time-input-group">
+          <input type="text" id="editEndTimeHour" class="time-input" maxlength="2" placeholder="HH" inputmode="numeric">
+          <span class="time-colon">:</span>
+          <input type="text" id="editEndTimeMinute" class="time-input" maxlength="2" placeholder="MM" inputmode="numeric">
+        </div>
         <button type="button" class="time-clear-btn" id="editTimeClearBtn" title="清除时间">✕</button>
-        <span class="edit-time-hint">留空则为全天任务</span>
       </div>
       <div class="edit-priority">
         <span>优先级：</span>

@@ -307,6 +307,7 @@ async function carryOverUnfinishedTodos() {
           subtasks: [],
           repeat: null,
           time: task.time || null,
+          endTime: task.endTime || null,
           order: todos[today].length
         });
       }
@@ -322,6 +323,7 @@ async function carryOverUnfinishedTodos() {
         subtasks: [],
         repeat: null,
         time: task.time || null,
+        endTime: task.endTime || null,
         order: todos[today].length
       });
     }
@@ -369,6 +371,7 @@ function generateRepeatingTodos() {
           subtasks: [],
           repeat: template.repeat,
           time: template.time || null,
+          endTime: template.endTime || null,
           order: todos[today].length
         };
         todos[today].push(newItem);
@@ -459,6 +462,7 @@ function getVirtualRepeatingTodos(dateKey) {
       subtasks: [],
       repeat: template.repeat,
       time: template.time || null,
+      endTime: template.endTime || null,
       order: 9000 + virtualItems.length,
       isVirtual: true
     });
@@ -508,6 +512,7 @@ async function loadTodosFromCloud() {
           subtasks: [],
           repeat: null,
           time: null,
+          endTime: null,
           order: newTodos[item.date].length
         };
         newTodos[item.date].push(todoItem);
@@ -552,6 +557,7 @@ async function loadTodosFromCloud() {
             item.subtasks = localItem.subtasks || [];
             item.repeat = localItem.repeat || null;
             item.time = localItem.time || null;
+            item.endTime = localItem.endTime || null;
             if (localItem.order !== undefined) item.order = localItem.order;
           }
         });
@@ -666,12 +672,13 @@ async function restoreFromLocalBackup() {
                 subtasks: item.subtasks || [],
                 repeat: item.repeat || null,
                 time: item.time || null,
+                endTime: item.endTime || null,
                 order: todos[dk].length
               });
             }
           } catch (e) {
             if (!todos[dk]) todos[dk] = [];
-            todos[dk].push({ ...item, id: item.id || tempId(), subtasks: item.subtasks || [], repeat: item.repeat || null, time: item.time || null, order: todos[dk].length });
+            todos[dk].push({ ...item, id: item.id || tempId(), subtasks: item.subtasks || [], repeat: item.repeat || null, time: item.time || null, endTime: item.endTime || null, order: todos[dk].length });
           }
         }
       }
@@ -962,7 +969,13 @@ function renderSchedulePanel(timedItems) {
   timedItems.forEach(item => {
     const [h, m] = item.time.split(':').map(Number);
     const itemMinutes = h * 60 + m;
-    const endMinutes = itemMinutes + 60; // 默认1小时
+    let endMinutes;
+    if (item.endTime) {
+      const [eh, em] = item.endTime.split(':').map(Number);
+      endMinutes = eh * 60 + em;
+    } else {
+      endMinutes = itemMinutes + 60; // 无结束时间默认1小时
+    }
 
     let statusClass = '';
     let statusHtml = '';
@@ -985,9 +998,16 @@ function renderSchedulePanel(timedItems) {
       statusHtml = '<span class="t-status s-upcoming">待开始</span>';
     }
 
-    const endH = String(Math.floor(endMinutes / 60) % 24).padStart(2, '0');
-    const endM = String(endMinutes % 60).padStart(2, '0');
-    const timeStr = `${item.time} - ${endH}:${endM} · 1小时`;
+    let timeStr;
+    if (item.endTime) {
+      const dur = endMinutes - itemMinutes;
+      const durH = Math.floor(dur / 60);
+      const durM = dur % 60;
+      const durStr = durH > 0 ? (durM > 0 ? `${durH}小时${durM}分` : `${durH}小时`) : `${durM}分钟`;
+      timeStr = `${item.time} - ${item.endTime} · ${durStr}`;
+    } else {
+      timeStr = item.time;
+    }
 
     html += `
       <div class="t-item ${statusClass}" data-id="${item.id}">
@@ -1032,7 +1052,8 @@ function renderTodoItem(item) {
 
   let timeBadge = '';
   if (item.time) {
-    timeBadge = `<span class="time-badge">${item.time}</span>`;
+    const timeDisplay = item.endTime ? `${item.time}-${item.endTime}` : item.time;
+    timeBadge = `<span class="time-badge">${timeDisplay}</span>`;
   }
 
   const virtualClass = item.isVirtual ? ' virtual-todo' : '';
@@ -1043,7 +1064,7 @@ function renderTodoItem(item) {
       ${carriedBadge}
       <button class="todo-checkbox${item.done ? ' checked' : ''}" data-id="${item.id}">${item.done ? '✓' : ''}</button>
       <div class="todo-info">
-        <div class="todo-text" data-id="${item.id}">${timeBadge}${escapeHtml(item.text)}${repeatBadge}</div>
+        <div class="todo-text" data-id="${item.id}">${timeBadge}${escapeHtml(item.time ? stripTimeFromText(item.text) : item.text)}${repeatBadge}</div>
       </div>
       <button class="todo-delete" data-id="${item.id}" title="删除">✕</button>
     </div>
@@ -1156,6 +1177,7 @@ function materializeVirtualTodo(virtualId, callback) {
     subtasks: [],
     repeat: virtualItem.repeat,
     time: virtualItem.time || null,
+    endTime: virtualItem.endTime || null,
     order: (todos[key] || []).length
   };
 
@@ -1196,11 +1218,15 @@ function openEditDialog(id) {
   editingTodoId = id;
   editingTodoDate = key;
 
-  document.getElementById('editTodoText').value = item.text;
+  // 编辑文本去掉时间前缀
+  document.getElementById('editTodoText').value = item.time ? stripTimeFromText(item.text) : item.text;
 
-  // 时间字段：自定义 HH:MM 输入框
+  // 开始时间
   const hourInput = document.getElementById('editTimeHour');
   const minuteInput = document.getElementById('editTimeMinute');
+  // 结束时间
+  const endHourInput = document.getElementById('editEndTimeHour');
+  const endMinuteInput = document.getElementById('editEndTimeMinute');
   const timeRow = document.getElementById('editTimeRow');
 
   if (item.time) {
@@ -1210,6 +1236,15 @@ function openEditDialog(id) {
   } else {
     hourInput.value = '';
     minuteInput.value = '';
+  }
+
+  if (item.endTime) {
+    const [eh, em] = item.endTime.split(':');
+    endHourInput.value = eh || '';
+    endMinuteInput.value = em || '';
+  } else {
+    endHourInput.value = '';
+    endMinuteInput.value = '';
   }
 
   // 有时间的任务（日程）显示时间行，全天待办隐藏
@@ -1245,6 +1280,15 @@ function getEditTime() {
   return `${hh}:${mm}`;
 }
 
+function getEditEndTime() {
+  const h = document.getElementById('editEndTimeHour').value.trim();
+  const m = document.getElementById('editEndTimeMinute').value.trim();
+  if (!h && !m) return null;
+  const hh = String(Math.min(23, Math.max(0, parseInt(h) || 0))).padStart(2, '0');
+  const mm = String(Math.min(59, Math.max(0, parseInt(m) || 0))).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 function saveEdit() {
   if (!editingTodoId || !editingTodoDate) return;
 
@@ -1255,7 +1299,9 @@ function saveEdit() {
   const priority = selectedDot ? selectedDot.dataset.priority : 'mid';
 
   const timeRow = document.getElementById('editTimeRow');
-  const time = (timeRow && timeRow.style.display !== 'none') ? getEditTime() : null;
+  const hasTimeRow = timeRow && timeRow.style.display !== 'none';
+  const time = hasTimeRow ? getEditTime() : null;
+  const endTime = hasTimeRow ? getEditEndTime() : null;
 
   const items = todos[editingTodoDate] || [];
   const item = items.find(t => t.id === editingTodoId);
@@ -1264,6 +1310,7 @@ function saveEdit() {
   item.text = text;
   item.priority = priority;
   item.time = time;
+  item.endTime = endTime;
 
   if (!editingTodoId.startsWith('local_')) {
     withTimeout(
@@ -1360,10 +1407,11 @@ async function addTodo() {
 
   // 智能时间识别
   let time = null;
+  let endTime = null;
   const parsed = parseSmartTime(text);
   if (parsed) {
     time = parsed.start;
-    if (parsed.end) time = parsed.start; // 存起始时间
+    endTime = parsed.end || null;
   }
 
   // 重复任务信息
@@ -1393,7 +1441,7 @@ async function addTodo() {
     );
 
     if (error) {
-      addTodoLocally(key, text, priority, repeat, time);
+      addTodoLocally(key, text, priority, repeat, time, endTime);
     } else {
       if (!todos[key]) todos[key] = [];
       todos[key].push({
@@ -1406,11 +1454,12 @@ async function addTodo() {
         subtasks: [],
         repeat,
         time,
+        endTime,
         order: todos[key].length
       });
     }
   } catch (err) {
-    addTodoLocally(key, text, priority, repeat, time);
+    addTodoLocally(key, text, priority, repeat, time, endTime);
   }
 
   input.value = '';
@@ -1437,7 +1486,7 @@ async function addTodo() {
   addBtn.textContent = '添加';
 }
 
-function addTodoLocally(key, text, priority, repeat, time) {
+function addTodoLocally(key, text, priority, repeat, time, endTime) {
   const localId = tempId();
   if (!todos[key]) todos[key] = [];
   todos[key].push({
@@ -1450,6 +1499,7 @@ function addTodoLocally(key, text, priority, repeat, time) {
     subtasks: [],
     repeat,
     time: time || null,
+    endTime: endTime || null,
     order: todos[key].length
   });
   pendingSyncs.push({ type: 'add_todo', localId, date: key, text, priority, done: false });
@@ -2614,15 +2664,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // 时间输入框行为
   const editTimeHour = document.getElementById('editTimeHour');
   const editTimeMinute = document.getElementById('editTimeMinute');
+  const editEndTimeHour = document.getElementById('editEndTimeHour');
+  const editEndTimeMinute = document.getElementById('editEndTimeMinute');
   const editTimeClearBtn = document.getElementById('editTimeClearBtn');
 
-  [editTimeHour, editTimeMinute].forEach(input => {
+  [editTimeHour, editTimeMinute, editEndTimeHour, editEndTimeMinute].forEach(input => {
+    const isHour = input === editTimeHour || input === editEndTimeHour;
     input.addEventListener('input', () => {
       input.value = input.value.replace(/\D/g, '');
     });
     input.addEventListener('blur', () => {
       if (input.value) {
-        const max = input === editTimeHour ? 23 : 59;
+        const max = isHour ? 23 : 59;
         let val = Math.min(max, Math.max(0, parseInt(input.value) || 0));
         input.value = String(val).padStart(2, '0');
       }
@@ -2635,10 +2688,15 @@ document.addEventListener('DOMContentLoaded', () => {
   editTimeHour.addEventListener('input', () => {
     if (editTimeHour.value.length === 2) editTimeMinute.focus();
   });
+  editEndTimeHour.addEventListener('input', () => {
+    if (editEndTimeHour.value.length === 2) editEndTimeMinute.focus();
+  });
 
   editTimeClearBtn.addEventListener('click', () => {
     editTimeHour.value = '';
     editTimeMinute.value = '';
+    editEndTimeHour.value = '';
+    editEndTimeMinute.value = '';
   });
 
   // 编辑弹窗优先级切换
