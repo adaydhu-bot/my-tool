@@ -206,7 +206,6 @@ function setupAuth() {
         if (welcomeEl) welcomeEl.textContent = `Hi ${nickname}，记录每一天，捕捉每个灵感 ✨`;
       }
 
-      initApp();
       appInitialized = true;
 
       try {
@@ -215,7 +214,6 @@ function setupAuth() {
         const todoCount = Object.values(todos).reduce((sum, arr) => sum + arr.length, 0);
         if (todoCount > 0) backupTodosToLocal();
         if (ideas.length > 0) backupIdeasToLocal();
-        initApp();
       } catch (err) {
         console.error('数据加载失败:', err);
       }
@@ -223,10 +221,12 @@ function setupAuth() {
         await carryOverUnfinishedTodos();
         generateRepeatingTodos();
         backupTodosToLocal();
-        initApp();
       } catch (err) {
         console.error('顺延/重复任务处理失败:', err);
       }
+
+      // 所有数据加载完毕后，只调用一次 initApp
+      initApp();
 
       // 加载设置
       loadSettings();
@@ -248,7 +248,9 @@ function setupAuth() {
 async function carryOverUnfinishedTodos() {
   const today = todayKey();
   const todayItems = todos[today] || [];
+  // 去重：检查 carriedFrom 匹配 以及 text 完全匹配（防止同名任务重复顺延）
   const carriedTexts = new Set(todayItems.filter(t => t.carriedFrom).map(t => t.text + '|' + t.carriedFrom));
+  const existingTexts = new Set(todayItems.map(t => t.text));
 
   const tasksToCarry = [];
 
@@ -258,8 +260,12 @@ async function carryOverUnfinishedTodos() {
     const key = dateKey(d);
     const items = todos[key] || [];
     items.forEach(item => {
-      if (!item.done && !item.repeat && !carriedTexts.has(item.text + '|' + key)) {
+      if (!item.done && !item.repeat
+        && !carriedTexts.has(item.text + '|' + key)
+        && !existingTexts.has(item.text)) {
         tasksToCarry.push({ ...item, originalDate: key });
+        // 标记已处理，防止同一文本从多天重复顺延
+        existingTexts.add(item.text);
       }
     });
   }
@@ -499,6 +505,33 @@ async function loadTodosFromCloud() {
       });
     }
 
+    // 去重：同日期内同文本的任务只保留一条（保留最早创建的）
+    Object.keys(newTodos).forEach(dk => {
+      const seen = new Map();
+      const deduped = [];
+      const duplicateIds = [];
+      newTodos[dk].forEach(item => {
+        const key = item.text + '|' + (item.done ? '1' : '0');
+        if (!seen.has(key)) {
+          seen.set(key, item);
+          deduped.push(item);
+        } else {
+          // 标记重复项，稍后清理云端
+          duplicateIds.push(item.id);
+        }
+      });
+      newTodos[dk] = deduped;
+      // 异步清理云端重复数据
+      if (duplicateIds.length > 0 && currentUser) {
+        duplicateIds.forEach(dupId => {
+          if (dupId && !String(dupId).startsWith('local_')) {
+            withTimeout(_supaClient.from('todos').delete().eq('id', dupId), 8000)
+              .catch(() => {});
+          }
+        });
+      }
+    });
+
     // 从本地备份恢复子任务和重复任务信息（云端表没有这些字段）
     const localBackup = getLocalTodosBackup();
     if (localBackup) {
@@ -684,6 +717,35 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// 从文本中移除时间信息，用于日程面板显示（避免与时间轴重复）
+function stripTimeFromText(text) {
+  // 预处理：全角数字→半角，全角冒号→半角
+  let t = text.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+              .replace(/：/g, ':');
+
+  // 移除各种时间范围和单独时间表达式
+  const patterns = [
+    // "10:00到11:30开会" → "开会"
+    /\d{1,2}:\d{2}\s*[到至\-\—~～]\s*\d{1,2}:\d{2}\s*/g,
+    // "10点到11点半开会" → "开会"
+    /\d{1,2}[点时:]\d{0,2}半?\s*[到至\-\—~～]\s*\d{1,2}[点时:]\d{0,2}半?\s*/g,
+    // "10-11点开会" → "开会"
+    /\d{1,2}\s*[到至\-\—~～]\s*\d{1,2}\s*[点时]\s*/g,
+    // "10点半开会" → "开会"
+    /\d{1,2}[点时]半\s*/g,
+    // "10点开会" → "开会"
+    /\d{1,2}[点时]\s*/g,
+    // "10:00开会" → "开会"
+    /\d{1,2}:\d{2}\s*/g,
+  ];
+
+  for (const pat of patterns) {
+    t = t.replace(pat, '');
+  }
+
+  return t.trim() || text;
 }
 
 function formatCarriedDate(key) {
@@ -904,7 +966,7 @@ function renderSchedulePanel(timedItems) {
       <div class="t-item ${statusClass}" data-id="${item.id}">
         <div class="t-time">${item.time}</div>
         <div class="t-card"${cardStyle}>
-          <div class="t-title${titleClass}">${escapeHtml(item.text)} ${statusHtml}</div>
+          <div class="t-title${titleClass}">${escapeHtml(stripTimeFromText(item.text))} ${statusHtml}</div>
           <div class="t-span">${timeStr}</div>
         </div>
       </div>
