@@ -1601,17 +1601,66 @@ body::after {
   white-space: nowrap;
 }
 
-.edit-time-row input[type="time"] {
-  padding: 6px 12px;
+.time-input-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--input-bg);
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 0.88rem;
-  outline: none;
-  background: var(--input-bg);
-  color: var(--text);
+  padding: 4px 8px;
+  transition: border-color 0.2s;
 }
 
-.edit-time-row input[type="time"]:focus { border-color: var(--primary); }
+.time-input-group:focus-within {
+  border-color: var(--primary);
+}
+
+.time-input {
+  width: 28px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.95rem;
+  color: var(--text);
+  text-align: center;
+  padding: 4px 0;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
+.time-input::placeholder {
+  color: var(--text-lighter, #ccc);
+  font-weight: 400;
+}
+
+.time-colon {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-light);
+  line-height: 1;
+}
+
+.time-clear-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: var(--border);
+  color: var(--text-light);
+  border-radius: 50%;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.time-clear-btn:hover {
+  background: var(--danger, #FF6B6B);
+  color: #fff;
+}
 
 .edit-time-hint {
   font-size: 0.75rem;

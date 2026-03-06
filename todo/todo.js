@@ -1002,12 +1002,12 @@ function renderSchedulePanel(timedItems) {
 
   timeline.innerHTML = html;
 
-  // 绑定日程点击事件（勾选完成/编辑）
+  // 绑定日程点击事件（打开编辑弹窗）
   timeline.querySelectorAll('.t-item').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.dataset.id;
       if (id && !id.startsWith('virtual_')) {
-        toggleTodo(id);
+        openEditDialog(id);
       }
     });
   });
@@ -1198,9 +1198,24 @@ function openEditDialog(id) {
 
   document.getElementById('editTodoText').value = item.text;
 
-  // 时间字段
-  const editTimeInput = document.getElementById('editTodoTime');
-  if (editTimeInput) editTimeInput.value = item.time || '';
+  // 时间字段：自定义 HH:MM 输入框
+  const hourInput = document.getElementById('editTimeHour');
+  const minuteInput = document.getElementById('editTimeMinute');
+  const timeRow = document.getElementById('editTimeRow');
+
+  if (item.time) {
+    const [h, m] = item.time.split(':');
+    hourInput.value = h || '';
+    minuteInput.value = m || '';
+  } else {
+    hourInput.value = '';
+    minuteInput.value = '';
+  }
+
+  // 有时间的任务（日程）显示时间行，全天待办隐藏
+  if (timeRow) {
+    timeRow.style.display = item.time ? 'flex' : 'none';
+  }
 
   const dots = document.querySelectorAll('#editPriorityDots .dot-btn');
   dots.forEach(d => d.classList.remove('selected'));
@@ -1221,6 +1236,15 @@ function closeEditDialog() {
   editingTodoDate = null;
 }
 
+function getEditTime() {
+  const h = document.getElementById('editTimeHour').value.trim();
+  const m = document.getElementById('editTimeMinute').value.trim();
+  if (!h && !m) return null;
+  const hh = String(Math.min(23, Math.max(0, parseInt(h) || 0))).padStart(2, '0');
+  const mm = String(Math.min(59, Math.max(0, parseInt(m) || 0))).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 function saveEdit() {
   if (!editingTodoId || !editingTodoDate) return;
 
@@ -1230,8 +1254,8 @@ function saveEdit() {
   const selectedDot = document.querySelector('#editPriorityDots .dot-btn.selected');
   const priority = selectedDot ? selectedDot.dataset.priority : 'mid';
 
-  const editTimeInput = document.getElementById('editTodoTime');
-  const time = editTimeInput && editTimeInput.value ? editTimeInput.value : null;
+  const timeRow = document.getElementById('editTimeRow');
+  const time = (timeRow && timeRow.style.display !== 'none') ? getEditTime() : null;
 
   const items = todos[editingTodoDate] || [];
   const item = items.find(t => t.id === editingTodoId);
@@ -2585,6 +2609,36 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('editTodoText').addEventListener('keypress', e => {
     if (e.key === 'Enter') saveEdit();
+  });
+
+  // 时间输入框行为
+  const editTimeHour = document.getElementById('editTimeHour');
+  const editTimeMinute = document.getElementById('editTimeMinute');
+  const editTimeClearBtn = document.getElementById('editTimeClearBtn');
+
+  [editTimeHour, editTimeMinute].forEach(input => {
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g, '');
+    });
+    input.addEventListener('blur', () => {
+      if (input.value) {
+        const max = input === editTimeHour ? 23 : 59;
+        let val = Math.min(max, Math.max(0, parseInt(input.value) || 0));
+        input.value = String(val).padStart(2, '0');
+      }
+    });
+    input.addEventListener('keypress', e => {
+      if (e.key === 'Enter') saveEdit();
+    });
+  });
+
+  editTimeHour.addEventListener('input', () => {
+    if (editTimeHour.value.length === 2) editTimeMinute.focus();
+  });
+
+  editTimeClearBtn.addEventListener('click', () => {
+    editTimeHour.value = '';
+    editTimeMinute.value = '';
   });
 
   // 编辑弹窗优先级切换
