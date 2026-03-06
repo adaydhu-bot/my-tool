@@ -2451,6 +2451,8 @@ function openImportDialog() {
 function closeImportDialog() {
   const overlay = document.getElementById('importOverlay');
   overlay.classList.remove('show');
+  // 清理 OCR 编辑器
+  overlay.querySelectorAll('.ocr-text-editor-wrap').forEach(el => el.remove());
   setTimeout(() => { overlay.style.display = 'none'; }, 250);
 }
 
@@ -2523,20 +2525,53 @@ async function runOCR(imageBlob) {
       return;
     }
 
-    // 尝试使用空间定位解析（利用 word bbox）
-    const spatialParsed = parseImportSpatial(result.data, ocrText);
-    if (spatialParsed) {
-      importParsedItems = spatialParsed;
-      renderImportResults();
-    } else {
-      // 回退到纯文本解析
-      parseImportText(ocrText);
-    }
+    // 显示 OCR 原文编辑区，让用户可修正
+    showOcrTextEditor(ocrText);
+
+    // 解析文本
+    parseImportText(ocrText);
   } catch (err) {
     console.error('OCR 失败:', err);
     statusText.textContent = 'OCR 识别失败，请重试';
     document.querySelector('.import-spinner').style.display = 'none';
   }
+}
+
+// 显示 OCR 原文编辑区
+function showOcrTextEditor(ocrText) {
+  const zone = document.getElementById('importPasteZone');
+  const card = zone.parentNode;
+  const resultsEl = document.getElementById('importResults');
+
+  // 移除旧的编辑区
+  card.querySelectorAll('.ocr-text-editor-wrap').forEach(el => el.remove());
+
+  const wrap = document.createElement('div');
+  wrap.className = 'ocr-text-editor-wrap';
+
+  const header = document.createElement('div');
+  header.className = 'ocr-text-editor-header';
+  header.innerHTML = '<span>OCR 识别原文</span><span class="ocr-text-hint">可编辑修正，修改后自动重新解析</span>';
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'ocr-text-editor';
+  textarea.value = ocrText;
+  textarea.rows = 6;
+
+  let debounceTimer = null;
+  textarea.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const text = textarea.value.trim();
+      if (text) {
+        parseImportText(text);
+      }
+    }, 400);
+  });
+
+  wrap.appendChild(header);
+  wrap.appendChild(textarea);
+  card.insertBefore(wrap, resultsEl);
 }
 
 // 农历日期词集合，用于过滤 OCR 中的农历文字
@@ -2554,7 +2589,6 @@ const LUNAR_DATE_WORDS = new Set([
 function isLunarText(text) {
   const t = text.trim();
   if (LUNAR_DATE_WORDS.has(t)) return true;
-  // 匹配"初X"等模式
   if (/^初[一二三四五六七八九十]$/.test(t)) return true;
   if (/^[十廿][一二三四五六七八九]$/.test(t)) return true;
   if (/^二十$/.test(t)) return true;
@@ -2562,311 +2596,31 @@ function isLunarText(text) {
   return false;
 }
 
-// 从文本中清除农历/节气/纯数字日期等噪声
+// 从文本中清除农历/节气噪声
 function cleanLunarNoise(text) {
   let t = text;
-  // 移除农历日期词
   for (const lw of LUNAR_DATE_WORDS) {
     t = t.split(lw).join(' ');
   }
-  // 移除 "初X" 模式
   t = t.replace(/初[一二三四五六七八九十]/g, ' ');
   t = t.replace(/[十廿][一二三四五六七八九]/g, ' ');
-  // 移除独立的1-31数字（日期数字混入日程文字）
-  t = t.replace(/(?:^|\s)(\d{1,2})(?=\s|$)/g, (match, num) => {
-    const n = parseInt(num, 10);
-    return (n >= 1 && n <= 31) ? ' ' : match;
-  });
-  // 移除单独的字母/符号噪声（如 "E", "ai" 等 OCR 误识别）
-  t = t.replace(/\b[a-zA-Z]{1,2}\b/g, ' ');
-  // 合并多余空格
   t = t.replace(/\s+/g, ' ').trim();
   return t;
 }
 
-// 空间定位解析：利用 word bbox 坐标关联日历日期与日程
-function parseImportSpatial(ocrData, fullText) {
-  // 从纯文本中提取年月
-  let baseYear = calYear;
-  let baseMonth = calMonth;
-  const ymMatch = fullText.match(/(\d{4})\s*[年/.\-]\s*(\d{1,2})\s*月?/);
-  if (ymMatch) {
-    baseYear = +ymMatch[1];
-    baseMonth = +ymMatch[2] - 1;
-  }
-
-  // 获取所有 words（Tesseract.js v5 默认输出）
-  const lines = ocrData.lines || [];
-  const allWords = ocrData.words || [];
-  if (allWords.length === 0 && lines.length === 0) return null;
-
-  // 收集带 bbox 的 word
-  let words = [];
-  if (allWords.length > 0) {
-    words = allWords.map(w => ({
-      text: w.text.trim(),
-      x0: w.bbox.x0, y0: w.bbox.y0,
-      x1: w.bbox.x1, y1: w.bbox.y1,
-      cx: (w.bbox.x0 + w.bbox.x1) / 2,
-      cy: (w.bbox.y0 + w.bbox.y1) / 2
-    })).filter(w => w.text.length > 0);
-  } else {
-    for (const line of lines) {
-      if (!line.words) continue;
-      for (const w of line.words) {
-        if (!w.text || !w.text.trim()) continue;
-        words.push({
-          text: w.text.trim(),
-          x0: w.bbox.x0, y0: w.bbox.y0,
-          x1: w.bbox.x1, y1: w.bbox.y1,
-          cx: (w.bbox.x0 + w.bbox.x1) / 2,
-          cy: (w.bbox.y0 + w.bbox.y1) / 2
-        });
-      }
-    }
-  }
-
-  if (words.length < 3) return null;
-
-  // 第一步：找到所有日期数字 word（纯数字 1-31）
-  const dayWords = [];
-  for (const w of words) {
-    const num = parseInt(w.text, 10);
-    if (!isNaN(num) && num >= 1 && num <= 31 && w.text.match(/^\d{1,2}$/)) {
-      dayWords.push({ ...w, day: num });
-    }
-  }
-
-  if (dayWords.length < 5) return null; // 月视图至少有一周(7)的日期
-
-  // 第二步：对日期数字按 x 坐标聚类成列
-  const colClusters = clusterByCoord(dayWords.map(d => d.cx), 30);
-  // 对日期数字按 y 坐标聚类成行
-  const rowClusters = clusterByCoord(dayWords.map(d => d.cy), 30);
-
-  if (colClusters.length < 2 || rowClusters.length < 2) return null;
-
-  // 计算列边界：每列中心的中点作为分隔线
-  const colCenters = colClusters.map(c => c.center).sort((a, b) => a - b);
-  const colBounds = []; // [{left, right, center}]
-  for (let i = 0; i < colCenters.length; i++) {
-    const left = i === 0 ? 0 : (colCenters[i - 1] + colCenters[i]) / 2;
-    const right = i === colCenters.length - 1 ? 99999 : (colCenters[i] + colCenters[i + 1]) / 2;
-    colBounds.push({ left, right, center: colCenters[i] });
-  }
-
-  // 计算行边界：每行中心的中点作为分隔线
-  const rowCenters = rowClusters.map(c => c.center).sort((a, b) => a - b);
-  const rowBounds = []; // [{top, bottom, center}]
-  for (let i = 0; i < rowCenters.length; i++) {
-    const top = i === 0 ? 0 : (rowCenters[i - 1] + rowCenters[i]) / 2;
-    const bottom = i === rowCenters.length - 1 ? 99999 : (rowCenters[i] + rowCenters[i + 1]) / 2;
-    rowBounds.push({ top, bottom, center: rowCenters[i] });
-  }
-
-  // 第三步：为每个日期数字确定其所在的网格（col, row）
-  const gridMap = {}; // "col,row" -> day number
-  for (const dw of dayWords) {
-    const col = colBounds.findIndex(b => dw.cx >= b.left && dw.cx < b.right);
-    const row = rowBounds.findIndex(b => dw.cy >= b.top && dw.cy < b.bottom);
-    if (col >= 0 && row >= 0) {
-      const key = `${col},${row}`;
-      // 如果同一格子已有日期，取数值较小（靠前）的那个（避免同格多数字混淆）
-      if (!gridMap[key] || dw.day < gridMap[key]) {
-        gridMap[key] = dw.day;
-      }
-    }
-  }
-
-  // 第四步：从 lines 提取日程，并利用 words 的 bbox 精确定位日程中每个 word 的位置
-  // 策略改变：不用 line 的整体 bbox（因为OCR一行可能跨多个格子），
-  // 而是用 line 中每个 word 的 bbox 来判断它属于哪个格子
-  const items = [];
-
-  // 遍历每一行的 words，按格子位置分组
-  for (const line of lines) {
-    if (!line.words || line.words.length === 0) continue;
-
-    // 把这一行的 words 按所属列分组
-    const wordsByCol = {};
-    for (const w of line.words) {
-      if (!w.text || !w.text.trim() || !w.bbox) continue;
-      const wcx = (w.bbox.x0 + w.bbox.x1) / 2;
-      const wcy = (w.bbox.y0 + w.bbox.y1) / 2;
-      const col = colBounds.findIndex(b => wcx >= b.left && wcx < b.right);
-      const row = rowBounds.findIndex(b => wcy >= b.top && wcy < b.bottom);
-      if (col < 0) continue;
-      // 用 "col,row" 作为分组 key
-      const gridKey = `${col},${row >= 0 ? row : 'x'}`;
-      if (!wordsByCol[gridKey]) wordsByCol[gridKey] = [];
-      wordsByCol[gridKey].push(w.text.trim());
-    }
-
-    // 对每个格子内的文本，尝试提取日程
-    for (const [gridKey, wordTexts] of Object.entries(wordsByCol)) {
-      const cellText = wordTexts.join(' ');
-      // 尝试提取日程
-      const cellSchedules = extractScheduleFromLine(cellText);
-      if (cellSchedules.length === 0) continue;
-
-      // 确定这个格子对应的日期
-      // 日程通常在日期数字下方同一列，可能跨行，所以需要往上找最近的日期
-      const [colStr, rowStr] = gridKey.split(',');
-      const col = parseInt(colStr, 10);
-      const row = rowStr === 'x' ? -1 : parseInt(rowStr, 10);
-
-      let matchedDay = null;
-
-      // 先试精确匹配：同列同行
-      if (gridMap[gridKey]) {
-        matchedDay = gridMap[gridKey];
-      }
-
-      // 再试同列往上找
-      if (!matchedDay && row >= 0) {
-        for (let r = row; r >= 0; r--) {
-          const k = `${col},${r}`;
-          if (gridMap[k]) { matchedDay = gridMap[k]; break; }
-        }
-      }
-
-      // 还找不到就找同列任意行
-      if (!matchedDay) {
-        for (const [k, d] of Object.entries(gridMap)) {
-          if (k.startsWith(`${col},`)) { matchedDay = d; break; }
-        }
-      }
-
-      if (!matchedDay) continue;
-
-      const dateStr = `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(matchedDay).padStart(2, '0')}`;
-
-      for (const sch of cellSchedules) {
-        // 清理农历噪声
-        let cleanText = cleanLunarNoise(sch.text);
-        if (cleanText.length === 0) continue;
-
-        const isDup = items.some(p => p.text === cleanText && p.time === sch.time && p.date === dateStr);
-        if (!isDup) {
-          items.push({
-            time: sch.time,
-            endTime: sch.endTime || null,
-            text: cleanText,
-            date: dateStr,
-            checked: true
-          });
-        }
-      }
-    }
-  }
-
-  // 如果按 word 细粒度解析没结果，回退到 line 级解析（但使用网格定位）
-  if (items.length === 0) {
-    for (const line of lines) {
-      const lt = (line.text || '').trim();
-      const lineItems = extractScheduleFromLine(lt);
-      if (lineItems.length === 0 || !line.bbox) continue;
-
-      const lcx = (line.bbox.x0 + line.bbox.x1) / 2;
-      const lcy = (line.bbox.y0 + line.bbox.y1) / 2;
-      const col = colBounds.findIndex(b => lcx >= b.left && lcx < b.right);
-      const row = rowBounds.findIndex(b => lcy >= b.top && lcy < b.bottom);
-
-      let matchedDay = null;
-      if (col >= 0 && row >= 0) {
-        // 同列往上找日期
-        for (let r = row; r >= 0; r--) {
-          const k = `${col},${r}`;
-          if (gridMap[k]) { matchedDay = gridMap[k]; break; }
-        }
-      }
-
-      if (!matchedDay) continue;
-
-      const dateStr = `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(matchedDay).padStart(2, '0')}`;
-
-      for (const sch of lineItems) {
-        let cleanText = cleanLunarNoise(sch.text);
-        if (cleanText.length === 0) continue;
-
-        const isDup = items.some(p => p.text === cleanText && p.time === sch.time && p.date === dateStr);
-        if (!isDup) {
-          items.push({
-            time: sch.time,
-            endTime: sch.endTime || null,
-            text: cleanText,
-            date: dateStr,
-            checked: true
-          });
-        }
-      }
-    }
-  }
-
-  return items.length > 0 ? items : null;
-}
-
-// 从一行文本中提取所有日程（支持同行多个日程）
-function extractScheduleFromLine(lineText) {
-  // 先清除农历文字，避免干扰
-  let cleaned = lineText;
-  for (const lw of LUNAR_DATE_WORDS) {
-    cleaned = cleaned.split(lw).join(' ');
-  }
-  cleaned = cleaned.replace(/初[一二三四五六七八九十]/g, ' ');
-  cleaned = cleaned.replace(/[十廿][一二三四五六七八九]/g, ' ');
-
-  const results = [];
-  // 匹配所有 时间+描述 模式
-  const regex = /(\d{1,2})[:\s：](\d{2})\s*(?:[-~～—至到]\s*(\d{1,2})[:\s：](\d{2}))?\s*([^\d\n][^\n]{0,40}?)(?=\s*\d{1,2}[:\s：]\d{2}|$)/g;
-  let m;
-  while ((m = regex.exec(cleaned)) !== null) {
-    const h = +m[1], min = +m[2];
-    if (h < 0 || h > 23 || min < 0 || min > 59) continue;
-    const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-    let endTime = null;
-    if (m[3] !== undefined && m[4] !== undefined) {
-      const eh = +m[3], emin = +m[4];
-      if (eh >= 0 && eh <= 23 && emin >= 0 && emin <= 59) {
-        endTime = `${String(eh).padStart(2, '0')}:${String(emin).padStart(2, '0')}`;
-      }
-    }
-    let text = (m[5] || '').trim().replace(/[·•●|｜\[\]【】]/g, ' ').trim();
-    text = text.replace(/\s*[·•●]\s*$/, '').trim();
-    // 移除混入的独立数字和短字母
-    text = text.replace(/(?:^|\s)\d{1,2}(?=\s|$)/g, ' ').trim();
-    text = text.replace(/\b[a-zA-Z]{1,2}\b/g, ' ').replace(/\s+/g, ' ').trim();
-    if (text.length > 0) {
-      results.push({ time, endTime, text });
-    }
-  }
-  return results;
-}
-
-// 按坐标值聚类，返回 [{center, values}]
-function clusterByCoord(values, threshold) {
-  if (values.length === 0) return [];
-  const sorted = [...values].sort((a, b) => a - b);
-  const clusters = [];
-  let currentValues = [sorted[0]];
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] - currentValues[currentValues.length - 1] < threshold) {
-      currentValues.push(sorted[i]);
-    } else {
-      const avg = currentValues.reduce((s, v) => s + v, 0) / currentValues.length;
-      clusters.push({ center: avg, values: currentValues });
-      currentValues = [sorted[i]];
-    }
-  }
-  const avg = currentValues.reduce((s, v) => s + v, 0) / currentValues.length;
-  clusters.push({ center: avg, values: currentValues });
-  return clusters;
-}
-
-// 纯文本解析（回退方案，或粘贴文本时使用）
+// 纯文本解析（主解析方案）
 function parseImportText(text) {
-  const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
   importParsedItems = [];
+
+  // 预处理：清除农历噪声
+  let cleanedText = text;
+  for (const lw of LUNAR_DATE_WORDS) {
+    cleanedText = cleanedText.split(lw).join(' ');
+  }
+  cleanedText = cleanedText.replace(/初[一二三四五六七八九十]/g, ' ');
+  cleanedText = cleanedText.replace(/[十廿][一二三四五六七八九]/g, ' ');
+
+  const lines = cleanedText.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
 
   // 提取年月信息
   let baseYear = calYear;
@@ -2880,49 +2634,118 @@ function parseImportText(text) {
     }
   }
 
-  // 追踪当前日期上下文
+  const makeDateStr = (day) => `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  // 第一步：从所有行中提取所有"时间+描述"片段
+  // 关键：一行中可能包含多个日期的日程混合在一起
+  // 策略：先扫描所有行，提取所有 (日期上下文, 时间, 描述) 三元组
+
   let currentDay = null;
 
   for (const line of lines) {
-    if (line.match(/^\d{4}\s*[年/.\-]\s*\d{1,2}\s*月?/) || line.match(/^[一二三四五六日月火水木金土周]+$/)) continue;
-    // 跳过纯农历文字行
-    if (isLunarText(line)) continue;
+    // 跳过年月标题行
+    if (line.match(/^\d{4}\s*[年/.\-]\s*\d{1,2}\s*月?/)) continue;
+    // 跳过纯星期行
+    if (line.match(/^[一二三四五六日月火水木金土周\s]+$/) && line.length <= 20) continue;
 
-    // 独立日期数字
-    const dayMatch = line.match(/^(\d{1,2})\s*$/);
-    if (dayMatch) {
-      const d = +dayMatch[1];
-      if (d >= 1 && d <= 31) { currentDay = d; continue; }
+    // 先清理行内噪声
+    let l = line.replace(/[|｜\[\]【】]/g, ' ').trim();
+
+    // 检测日历周行（如 "1 2 3 4 5 6 7" 或 "8 9 10 11 12 13 14"）
+    // 这种行有 3 个以上独立数字且没有时间模式，应跳过
+    const multiNumMatch = l.match(/^[\d\s]+$/);
+    if (multiNumMatch) {
+      const nums = l.split(/\s+/).filter(n => /^\d{1,2}$/.test(n));
+      if (nums.length >= 3) {
+        // 这是一个日历周行，不设置 currentDay
+        continue;
+      }
+      if (nums.length === 1) {
+        const d = +nums[0];
+        if (d >= 1 && d <= 31) currentDay = d;
+        continue;
+      }
+      continue;
     }
 
-    // 行首带日期前缀
-    const dayPrefixMatch = line.match(/^(\d{1,2})\s+[·•●]?\s*(\d{1,2})[:\s：](\d{2})/);
-    if (dayPrefixMatch) {
-      const d = +dayPrefixMatch[1];
+    // 检查行内是否含有混合的多日期数字+文字（月视图OCR常见）
+    // 如 "25 训六 25 训 E 26 初八 27 ai 28 初十" → 跳过，不是有效日程
+    // 如 "训六 25 训 E 26 初八 27 ai 28 初十" → 跳过
+    // 判断标准：行内有3个以上独立数字(1-31)且没有有效时间模式
+    const hasTimePattern = /\d{1,2}[:\s：]\d{2}/.test(l);
+    if (!hasTimePattern) {
+      const inlineNums = (l.match(/(?:^|\s)(\d{1,2})(?=\s|$)/g) || []).map(n => +n.trim()).filter(n => n >= 1 && n <= 31);
+      if (inlineNums.length >= 3) continue; // 多日期行，跳过
+      // 单数字行作为日期上下文
+      if (inlineNums.length === 1 && l.trim().match(/^\d{1,2}$/)) {
+        currentDay = inlineNums[0];
+      }
+      continue; // 没有时间模式的行不包含日程
+    }
+
+    // 行首有日期前缀（如 "5 10:00 会议" 或 "25 10:00 会议"）
+    const leadDayMatch = l.match(/^(\d{1,2})\s+(?=\d{1,2}[:\s：]\d{2})/);
+    if (leadDayMatch) {
+      const d = +leadDayMatch[1];
       if (d >= 1 && d <= 31) {
         currentDay = d;
-        const restLine = line.replace(/^\d{1,2}\s+/, '');
-        const parsed = parseScheduleLine(restLine);
-        if (parsed) {
-          const dateStr = `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
-          const isDup = importParsedItems.some(p => p.text === parsed.text && p.time === parsed.time && p.date === dateStr);
-          if (!isDup) importParsedItems.push({ ...parsed, date: dateStr, checked: true });
-        }
-        continue;
+        l = l.substring(leadDayMatch[0].length).trim();
       }
     }
 
-    const parsed = parseScheduleLine(line);
-    if (parsed) {
-      const dateStr = currentDay
-        ? `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`
-        : dateKey(selectedDate);
-      const isDup = importParsedItems.some(p => p.text === parsed.text && p.time === parsed.time && p.date === dateStr);
-      if (!isDup) importParsedItems.push({ ...parsed, date: dateStr, checked: true });
+    // 尝试从该行提取多个日程
+    // 先尝试拆分：在行内，每遇到一个 "数字:数字" 或 "数字：数字" 就作为新日程的开始
+    const segments = splitScheduleSegments(l);
+
+    for (const seg of segments) {
+      // 检查这个 segment 前面是否有独立日期数字
+      const segDayMatch = seg.match(/^(\d{1,2})\s+/);
+      let segDay = currentDay;
+      let segText = seg;
+      if (segDayMatch) {
+        const d = +segDayMatch[1];
+        if (d >= 1 && d <= 31) {
+          segDay = d;
+          currentDay = d;
+          segText = seg.substring(segDayMatch[0].length);
+        }
+      }
+
+      const parsed = parseScheduleLine(segText);
+      if (parsed) {
+        // 清理描述文本中混入的独立数字（月视图中其他格子的日期）
+        let cleanDesc = parsed.text;
+        // 移除尾部的独立数字（如 "音频周会 25" 中的 "25"）
+        cleanDesc = cleanDesc.replace(/\s+\d{1,2}\s*$/, '').trim();
+        // 移除前部的独立数字
+        cleanDesc = cleanDesc.replace(/^\d{1,2}\s+/, '').trim();
+        // 移除中间被空格包围的独立 1-2 位数字
+        cleanDesc = cleanDesc.replace(/\s+\d{1,2}\s+/g, ' ').trim();
+        // 移除独立的短字母噪声（如 "E", "ai"）
+        cleanDesc = cleanDesc.replace(/(?:^|\s)[a-zA-Z]{1,2}(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+        // 移除末尾的句号/点号
+        cleanDesc = cleanDesc.replace(/[。．\.]+$/, '').trim();
+
+        if (cleanDesc.length === 0) continue;
+
+        const dateStr = segDay ? makeDateStr(segDay) : dateKey(selectedDate);
+        const isDup = importParsedItems.some(p =>
+          p.time === parsed.time && normalizeDesc(p.text) === normalizeDesc(cleanDesc) && p.date === dateStr
+        );
+        if (!isDup) {
+          importParsedItems.push({
+            time: parsed.time,
+            endTime: parsed.endTime || null,
+            text: cleanDesc,
+            date: dateStr,
+            checked: true
+          });
+        }
+      }
     }
   }
 
-  // 宽松合并解析
+  // 宽松合并解析（如果上面没提取到任何结果）
   if (importParsedItems.length === 0) {
     const fullText = lines.join(' ');
     const allTimes = [...fullText.matchAll(/(\d{1,2})[:\s：](\d{2})\s*([^\d\n]{1,30})/g)];
@@ -2930,7 +2753,8 @@ function parseImportText(text) {
       const h = +m[1], min = +m[2], desc = m[3].trim();
       if (h >= 0 && h <= 23 && min >= 0 && min <= 59 && desc) {
         const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-        const cleanText = desc.replace(/^[·•\-\s]+/, '').trim();
+        let cleanText = desc.replace(/^[·•\-\s]+/, '').trim();
+        cleanText = cleanLunarNoise(cleanText);
         if (cleanText && cleanText.length > 0) {
           importParsedItems.push({ time, endTime: null, text: cleanText, date: dateKey(selectedDate), checked: true });
         }
@@ -2943,7 +2767,60 @@ function parseImportText(text) {
     if (!item.date) item.date = dateKey(selectedDate);
   }
 
+  // 去重：相同时间+相似描述的只保留一个（处理 OCR 多次识别同一日程的情况）
+  const deduped = [];
+  for (const item of importParsedItems) {
+    const hasSimilar = deduped.some(d =>
+      d.time === item.time && d.date === item.date && isSimilarText(d.text, item.text)
+    );
+    if (!hasSimilar) deduped.push(item);
+  }
+  importParsedItems = deduped;
+
   renderImportResults();
+}
+
+// 将一行文本拆分成多个日程段落
+// 例如 "10:15 妇女节视频拍摄-Ada 10:00 FFGS音频周会" -> ["10:15 妇女节视频拍摄-Ada", "10:00 FFGS音频周会"]
+function splitScheduleSegments(line) {
+  // 找到所有时间模式的位置
+  const timePattern = /(?:^|[\s·•●])\d{1,2}[:\s：]\d{2}/g;
+  const positions = [];
+  let match;
+  while ((match = timePattern.exec(line)) !== null) {
+    // 跳过前导空格/符号
+    let start = match.index;
+    while (start < line.length && /[\s·•●]/.test(line[start])) start++;
+    positions.push(start);
+  }
+
+  if (positions.length === 0) return [line];
+  if (positions.length === 1) return [line.substring(positions[0]).trim()];
+
+  // 在每个时间位置处拆分
+  const segments = [];
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i];
+    const end = i + 1 < positions.length ? positions[i + 1] : line.length;
+    const seg = line.substring(start, end).trim();
+    if (seg) segments.push(seg);
+  }
+  return segments;
+}
+
+// 归一化描述文本用于比较
+function normalizeDesc(text) {
+  return text.replace(/[\s\-·•●。，,.!！?？]/g, '').toLowerCase();
+}
+
+// 判断两个文本是否相似（用于去重）
+function isSimilarText(a, b) {
+  const na = normalizeDesc(a);
+  const nb = normalizeDesc(b);
+  if (na === nb) return true;
+  // 一个包含另一个
+  if (na.includes(nb) || nb.includes(na)) return true;
+  return false;
 }
 
 // 解析单行日程
@@ -3003,7 +2880,7 @@ function parseScheduleLine(line) {
   return null;
 }
 
-// 渲染导入结果列表（按日期分组）
+// 渲染导入结果列表（按日期分组，每项可修改日期）
 function renderImportResults() {
   const resultsEl = document.getElementById('importResults');
   const listEl = document.getElementById('importResultsList');
@@ -3013,11 +2890,8 @@ function renderImportResults() {
   if (importParsedItems.length === 0) {
     resultsEl.style.display = 'block';
     countEl.textContent = '';
-    listEl.innerHTML = '<p class="empty-tip" style="font-size:0.82rem;padding:10px 0;">未识别到日程信息，请尝试更清晰的截图或直接粘贴文本</p>';
+    listEl.innerHTML = '<p class="empty-tip" style="font-size:0.82rem;padding:10px 0;">未识别到日程信息，请尝试更清晰的截图或编辑上方原文</p>';
     confirmBtn.disabled = true;
-
-    // 显示文本粘贴备选方案
-    showTextImportFallback();
     return;
   }
 
@@ -3034,71 +2908,74 @@ function renderImportResults() {
 
   // 按日期排序
   const sortedDates = Object.keys(grouped).sort();
-
-  // 判断是否有多个不同日期
   const multiDate = sortedDates.length > 1;
 
   let html = '';
   for (const dateStr of sortedDates) {
     const items = grouped[dateStr];
-    // 格式化日期为友好显示
-    if (multiDate) {
-      const d = new Date(dateStr + 'T00:00:00');
-      const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-      const today = dateKey(new Date());
-      const label = dateStr === today ? '今天' : `${d.getMonth() + 1}月${d.getDate()}日 周${weekDays[d.getDay()]}`;
-      html += `<div class="import-date-group">
-        <div class="import-date-header">
-          <span class="import-date-label">${label}</span>
-          <span class="import-date-str">${dateStr}</span>
-          <label class="import-date-toggle"><input type="checkbox" checked data-date="${dateStr}" class="import-date-check"> 全选</label>
+    const d = new Date(dateStr + 'T00:00:00');
+    const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+    const today = dateKey(new Date());
+    const label = dateStr === today ? '今天' : `${d.getMonth() + 1}月${d.getDate()}日 周${weekDays[d.getDay()]}`;
+
+    html += `<div class="import-date-group">
+      <div class="import-date-header">
+        <span class="import-date-label">${label}</span>
+        <span class="import-date-str">${dateStr}</span>
+        <label class="import-date-toggle"><input type="checkbox" checked data-date="${dateStr}" class="import-date-check"> 全选</label>
+      </div>`;
+
+    for (const item of items) {
+      const endStr = item.endTime ? ` → ${item.endTime}` : '';
+      html += `
+        <div class="import-result-item">
+          <input type="checkbox" ${item.checked ? 'checked' : ''} data-index="${item._index}" class="import-item-check">
+          <span class="import-result-time">${item.time}${endStr}</span>
+          <span class="import-result-text">${escapeHtml(item.text)}</span>
+          <input type="date" value="${dateStr}" data-index="${item._index}" class="import-item-date" title="修改日期">
         </div>`;
     }
 
-    for (const item of items) {
-      const endStr = item.endTime ? `→ ${item.endTime}` : '';
-      html += `
-        <label class="import-result-item">
-          <input type="checkbox" ${item.checked ? 'checked' : ''} data-index="${item._index}">
-          <span class="import-result-time">${item.time}</span>
-          <span class="import-result-text">${escapeHtml(item.text)}</span>
-          ${endStr ? `<span class="import-result-end">${endStr}</span>` : ''}
-        </label>`;
-    }
-
-    if (multiDate) {
-      html += `</div>`;
-    }
+    html += `</div>`;
   }
 
   listEl.innerHTML = html;
 
-  // 绑定单项 checkbox 事件
-  listEl.querySelectorAll('input[type="checkbox"][data-index]').forEach(cb => {
+  // 绑定单项 checkbox
+  listEl.querySelectorAll('.import-item-check').forEach(cb => {
     cb.addEventListener('change', () => {
       const idx = +cb.dataset.index;
       importParsedItems[idx].checked = cb.checked;
-      // 更新日期全选状态
       updateDateGroupChecks(listEl);
       updateImportConfirmBtn();
     });
   });
 
-  // 绑定日期全选 checkbox 事件
+  // 绑定日期修改
+  listEl.querySelectorAll('.import-item-date').forEach(input => {
+    input.addEventListener('change', () => {
+      const idx = +input.dataset.index;
+      if (input.value) {
+        importParsedItems[idx].date = input.value;
+        // 重新渲染以更新分组
+        renderImportResults();
+      }
+    });
+  });
+
+  // 绑定日期组全选
   listEl.querySelectorAll('.import-date-check').forEach(cb => {
     cb.addEventListener('change', () => {
       const dateStr = cb.dataset.date;
       const checked = cb.checked;
-      // 找到该日期下所有项目
-      importParsedItems.forEach((item, i) => {
+      importParsedItems.forEach((item) => {
         if ((item.date || dateKey(selectedDate)) === dateStr) {
           item.checked = checked;
         }
       });
-      // 更新 UI
       const group = cb.closest('.import-date-group');
       if (group) {
-        group.querySelectorAll('input[type="checkbox"][data-index]').forEach(c => { c.checked = checked; });
+        group.querySelectorAll('.import-item-check').forEach(c => { c.checked = checked; });
       }
       updateImportConfirmBtn();
     });

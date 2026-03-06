@@ -1664,16 +1664,17 @@ body::after {
 .import-result-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   background: var(--input-bg);
   border: 1px solid var(--border);
   transition: all 0.2s;
+  flex-wrap: wrap;
 }
 .import-result-item:hover { border-color: var(--primary-light); }
 
-.import-result-item input[type="checkbox"] {
+.import-result-item .import-item-check {
   width: 16px;
   height: 16px;
   accent-color: var(--primary);
@@ -1687,12 +1688,30 @@ body::after {
   color: var(--primary-dark);
   min-width: 40px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .import-result-text {
   font-size: 0.85rem;
   color: var(--text);
   flex: 1;
+  min-width: 0;
+}
+
+.import-item-date {
+  font-size: 0.7rem;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-light);
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 120px;
+}
+.import-item-date:focus {
+  outline: none;
+  border-color: var(--primary);
 }
 
 .import-result-end {
@@ -1700,6 +1719,44 @@ body::after {
   color: var(--text-lighter);
   white-space: nowrap;
 }
+
+/* OCR 原文编辑区 */
+.ocr-text-editor-wrap {
+  margin: 10px 0;
+}
+.ocr-text-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.ocr-text-hint {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--text-lighter);
+}
+.ocr-text-editor {
+  width: 100%;
+  min-height: 80px;
+  max-height: 160px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  font-size: 0.8rem;
+  color: var(--text);
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.ocr-text-editor:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.ocr-text-editor::placeholder { color: var(--text-lighter); }
 
 .import-actions {
   display: flex;
