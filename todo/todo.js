@@ -211,7 +211,11 @@ function setupAuth() {
       // ====== 快速启动：先用本地缓存立即渲染 UI ======
       const localTodos = getLocalTodosBackup();
       const localIdeas = getLocalIdeasBackup();
-      if (localTodos) todos = localTodos;
+      if (localTodos) {
+        todos = localTodos;
+        // 本地缓存去重：同日期内同文本只保留一条
+        deduplicateTodos();
+      }
       if (localIdeas) ideas = localIdeas;
 
       // 立即渲染 UI（用缓存数据），消除白屏等待
@@ -255,8 +259,7 @@ function setupAuth() {
 async function carryOverUnfinishedTodos() {
   const today = todayKey();
   const todayItems = todos[today] || [];
-  // 去重：检查 carriedFrom 匹配 以及 text 完全匹配（防止同名任务重复顺延）
-  const carriedTexts = new Set(todayItems.filter(t => t.carriedFrom).map(t => t.text + '|' + t.carriedFrom));
+  // 去重：只看 text，不区分 carriedFrom 来源日期，防止同文本任务从不同天重复顺延
   const existingTexts = new Set(todayItems.map(t => t.text));
 
   const tasksToCarry = [];
@@ -268,7 +271,6 @@ async function carryOverUnfinishedTodos() {
     const items = todos[key] || [];
     items.forEach(item => {
       if (!item.done && !item.repeat
-        && !carriedTexts.has(item.text + '|' + key)
         && !existingTexts.has(item.text)) {
         tasksToCarry.push({ ...item, originalDate: key });
         // 标记已处理，防止同一文本从多天重复顺延
@@ -705,6 +707,22 @@ async function restoreFromLocalBackup() {
 }
 
 // ========== 工具函数 ==========
+// 全局待办去重：同日期内同文本只保留一条（保留最早创建的）
+function deduplicateTodos() {
+  Object.keys(todos).forEach(dk => {
+    const seen = new Map();
+    const deduped = [];
+    (todos[dk] || []).forEach(item => {
+      const key = item.text;
+      if (!seen.has(key)) {
+        seen.set(key, item);
+        deduped.push(item);
+      }
+    });
+    todos[dk] = deduped;
+  });
+}
+
 function dateKey(d) {
   const date = new Date(d);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
