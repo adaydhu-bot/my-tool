@@ -2416,6 +2416,373 @@ function saveSettings() {
 }
 
 // ================================================================
+// 模块八：截图 OCR 导入日程
+// ================================================================
+
+let ocrWorker = null;
+let importParsedItems = [];
+
+// 打开导入弹窗
+function openImportDialog() {
+  const overlay = document.getElementById('importOverlay');
+  overlay.style.display = 'flex';
+  requestAnimationFrame(() => overlay.classList.add('show'));
+
+  // 重置状态
+  document.getElementById('importPlaceholder').style.display = 'flex';
+  document.getElementById('importPreviewImg').style.display = 'none';
+  document.getElementById('importStatus').style.display = 'none';
+  document.getElementById('importResults').style.display = 'none';
+  document.getElementById('importConfirmBtn').disabled = true;
+  const zone = document.getElementById('importPasteZone');
+  zone.classList.remove('has-image');
+
+  // 移除已有的文本区域
+  const existingTextarea = zone.parentNode.querySelector('.import-textarea');
+  if (existingTextarea) existingTextarea.remove();
+  const existingToggle = zone.parentNode.querySelector('.import-text-toggle');
+  if (existingToggle) existingToggle.remove();
+
+  importParsedItems = [];
+  zone.focus();
+}
+
+// 关闭导入弹窗
+function closeImportDialog() {
+  const overlay = document.getElementById('importOverlay');
+  overlay.classList.remove('show');
+  setTimeout(() => { overlay.style.display = 'none'; }, 250);
+}
+
+// 处理粘贴的图片
+async function handleImportPaste(e) {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  // 优先查找图片
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) return;
+
+      // 显示预览
+      const url = URL.createObjectURL(blob);
+      const previewImg = document.getElementById('importPreviewImg');
+      const placeholder = document.getElementById('importPlaceholder');
+      const zone = document.getElementById('importPasteZone');
+
+      previewImg.src = url;
+      previewImg.style.display = 'block';
+      placeholder.style.display = 'none';
+      zone.classList.add('has-image');
+
+      // 开始 OCR
+      await runOCR(blob);
+      return;
+    }
+  }
+
+  // 若没有图片，检查文本粘贴
+  const text = e.clipboardData?.getData('text/plain');
+  if (text && text.trim()) {
+    e.preventDefault();
+    parseImportText(text.trim());
+  }
+}
+
+// 运行 Tesseract.js OCR
+async function runOCR(imageBlob) {
+  const statusEl = document.getElementById('importStatus');
+  const statusText = document.getElementById('importStatusText');
+  const resultsEl = document.getElementById('importResults');
+
+  statusEl.style.display = 'flex';
+  resultsEl.style.display = 'none';
+  statusText.textContent = '正在加载 OCR 引擎...';
+
+  try {
+    statusText.textContent = '正在识别文字，请稍候...';
+
+    const result = await Tesseract.recognize(imageBlob, 'chi_sim+eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round((m.progress || 0) * 100);
+          statusText.textContent = `正在识别文字... ${pct}%`;
+        }
+      }
+    });
+
+    const ocrText = result.data.text;
+    statusEl.style.display = 'none';
+
+    if (!ocrText || !ocrText.trim()) {
+      statusText.textContent = '未识别到文字，请尝试更清晰的截图';
+      statusEl.style.display = 'flex';
+      document.querySelector('.import-spinner').style.display = 'none';
+      return;
+    }
+
+    parseImportText(ocrText);
+  } catch (err) {
+    console.error('OCR 失败:', err);
+    statusText.textContent = 'OCR 识别失败，请重试';
+    document.querySelector('.import-spinner').style.display = 'none';
+  }
+}
+
+// 解析 OCR 文本为日程项
+function parseImportText(text) {
+  const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+  importParsedItems = [];
+
+  for (const line of lines) {
+    const parsed = parseScheduleLine(line);
+    if (parsed) {
+      // 去重：避免同文本重复
+      const isDup = importParsedItems.some(p => p.text === parsed.text && p.time === parsed.time);
+      if (!isDup) {
+        importParsedItems.push({ ...parsed, checked: true });
+      }
+    }
+  }
+
+  // 如果单行解析没结果，尝试更宽松的合并解析
+  if (importParsedItems.length === 0) {
+    const fullText = lines.join(' ');
+    const allTimes = [...fullText.matchAll(/(\d{1,2})[:\s：](\d{2})\s*([^\d\n]{1,30})/g)];
+    for (const m of allTimes) {
+      const h = +m[1], min = +m[2], desc = m[3].trim();
+      if (h >= 0 && h <= 23 && min >= 0 && min <= 59 && desc) {
+        const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        const cleanText = desc.replace(/^[·•\-\s]+/, '').trim();
+        if (cleanText && cleanText.length > 0) {
+          importParsedItems.push({ time, endTime: null, text: cleanText, checked: true });
+        }
+      }
+    }
+  }
+
+  renderImportResults();
+}
+
+// 解析单行日程
+function parseScheduleLine(line) {
+  // 清理 OCR 常见噪声
+  let l = line.replace(/[|｜\[\]【】]/g, ' ').trim();
+
+  // 模式1: "10:00 FFGS音频周会" 或 "10:00 - 11:00 FFGS音频周会"
+  let m = l.match(/^[·•●]?\s*(\d{1,2})[:\s：](\d{2})\s*(?:[-~～—至到]\s*(\d{1,2})[:\s：](\d{2}))?\s+(.+)/);
+  if (m) {
+    const h = +m[1], min = +m[2];
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+      let endTime = null;
+      if (m[3] !== undefined && m[4] !== undefined) {
+        const eh = +m[3], emin = +m[4];
+        if (eh >= 0 && eh <= 23 && emin >= 0 && emin <= 59) {
+          endTime = `${String(eh).padStart(2, '0')}:${String(emin).padStart(2, '0')}`;
+        }
+      }
+      let text = m[5].trim();
+      // 清理尾部杂质（如 "-Ada" 之类的人名标注可保留）
+      text = text.replace(/\s*[·•●]\s*$/, '').trim();
+      if (text.length > 0) return { time, endTime, text };
+    }
+  }
+
+  // 模式2: "10:15 妇女节视频拍摄-Ada"（无分隔符直接跟文字）
+  m = l.match(/^[·•●]?\s*(\d{1,2})[:\s：](\d{2})\s*([^\d].+)/);
+  if (m) {
+    const h = +m[1], min = +m[2];
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+      let text = m[3].trim();
+      text = text.replace(/\s*[·•●]\s*$/, '').trim();
+      if (text.length > 0) return { time, endTime: null, text };
+    }
+  }
+
+  // 模式3: "下午3点 开会" / "15点 开会"
+  m = l.match(/^[·•●]?\s*(?:上午|下午|晚上)?\s*(\d{1,2})\s*[点时]\s*(\d{0,2})(?:分)?\s*(.+)/);
+  if (m) {
+    let h = +m[1];
+    const min = +(m[2] || 0);
+    const prefix = l.match(/下午|晚上/);
+    if (prefix && h < 12) h += 12;
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+      let text = m[3].trim();
+      if (text.length > 0) return { time, endTime: null, text };
+    }
+  }
+
+  return null;
+}
+
+// 渲染导入结果列表
+function renderImportResults() {
+  const resultsEl = document.getElementById('importResults');
+  const listEl = document.getElementById('importResultsList');
+  const countEl = document.getElementById('importResultsCount');
+  const confirmBtn = document.getElementById('importConfirmBtn');
+
+  if (importParsedItems.length === 0) {
+    resultsEl.style.display = 'block';
+    countEl.textContent = '';
+    listEl.innerHTML = '<p class="empty-tip" style="font-size:0.82rem;padding:10px 0;">未识别到日程信息，请尝试更清晰的截图或直接粘贴文本</p>';
+    confirmBtn.disabled = true;
+
+    // 显示文本粘贴备选方案
+    showTextImportFallback();
+    return;
+  }
+
+  countEl.textContent = `${importParsedItems.length} 项`;
+  resultsEl.style.display = 'block';
+
+  listEl.innerHTML = importParsedItems.map((item, i) => {
+    const endStr = item.endTime ? `→ ${item.endTime}` : '';
+    return `
+      <label class="import-result-item">
+        <input type="checkbox" ${item.checked ? 'checked' : ''} data-index="${i}">
+        <span class="import-result-time">${item.time}</span>
+        <span class="import-result-text">${escapeHtml(item.text)}</span>
+        ${endStr ? `<span class="import-result-end">${endStr}</span>` : ''}
+      </label>
+    `;
+  }).join('');
+
+  // 绑定 checkbox 事件
+  listEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const idx = +cb.dataset.index;
+      importParsedItems[idx].checked = cb.checked;
+      updateImportConfirmBtn();
+    });
+  });
+
+  updateImportConfirmBtn();
+}
+
+// 显示文本粘贴备选输入
+function showTextImportFallback() {
+  const zone = document.getElementById('importPasteZone');
+  const card = zone.parentNode;
+
+  // 避免重复添加
+  if (card.querySelector('.import-textarea')) return;
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'import-text-toggle';
+  toggleBtn.textContent = '📝 或直接粘贴文本内容';
+  toggleBtn.addEventListener('click', () => {
+    const ta = card.querySelector('.import-textarea');
+    if (ta) {
+      ta.style.display = ta.style.display === 'none' ? 'block' : 'none';
+      if (ta.style.display !== 'none') ta.focus();
+    }
+  });
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'import-textarea';
+  textarea.placeholder = '粘贴日程文本，每行一条，如：\n10:00 FFGS音频周会\n12:00 午餐\n15:00 双周报更新';
+  textarea.addEventListener('input', () => {
+    const text = textarea.value.trim();
+    if (text) {
+      parseImportText(text);
+    }
+  });
+
+  // 插入到 results 前面
+  const resultsEl = document.getElementById('importResults');
+  card.insertBefore(toggleBtn, resultsEl);
+  card.insertBefore(textarea, resultsEl);
+}
+
+// 更新确认按钮状态
+function updateImportConfirmBtn() {
+  const btn = document.getElementById('importConfirmBtn');
+  const checkedCount = importParsedItems.filter(p => p.checked).length;
+  btn.disabled = checkedCount === 0;
+  btn.textContent = checkedCount > 0 ? `导入选中项 (${checkedCount})` : '导入选中项';
+}
+
+// 执行批量导入
+async function executeImport() {
+  const itemsToImport = importParsedItems.filter(p => p.checked);
+  if (itemsToImport.length === 0) return;
+
+  const btn = document.getElementById('importConfirmBtn');
+  btn.disabled = true;
+  btn.textContent = '导入中...';
+
+  const key = dateKey(selectedDate);
+
+  for (const item of itemsToImport) {
+    const fullText = `${item.time}${item.text}`;
+
+    // 检查是否已存在同样的日程
+    const existing = (todos[key] || []).find(t =>
+      t.time === item.time && stripTimeFromText(t.text) === item.text
+    );
+    if (existing) continue;
+
+    try {
+      const { data, error } = await withTimeout(
+        _supaClient.from('todos').insert({
+          user_id: currentUser.id,
+          date: key,
+          text: fullText,
+          priority: 'mid',
+          done: false,
+          time: item.time,
+          end_time: item.endTime || null
+        }).select().single()
+      );
+
+      if (!error && data) {
+        if (!todos[key]) todos[key] = [];
+        todos[key].push({
+          id: data.id,
+          text: data.text,
+          priority: data.priority,
+          done: data.done,
+          createdAt: data.created_at,
+          carriedFrom: null,
+          subtasks: [],
+          repeat: null,
+          time: item.time,
+          endTime: item.endTime || null,
+          order: todos[key].length
+        });
+      } else {
+        addTodoLocally(key, fullText, 'mid', null, item.time, item.endTime || null);
+      }
+    } catch (err) {
+      addTodoLocally(key, fullText, 'mid', null, item.time, item.endTime || null);
+    }
+  }
+
+  backupTodosToLocal();
+  renderTodoList();
+  renderCalendar();
+  updateTodoHeader();
+  closeImportDialog();
+
+  // 显示导入成功提示
+  const container = document.getElementById('undoToastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast';
+  toast.innerHTML = `<span class="undo-toast-text">✅ 已导入 ${itemsToImport.length} 条日程</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// ================================================================
 // 心跳保活
 // ================================================================
 let heartbeatTimer = null;
@@ -2839,6 +3206,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 加载主题（在登录前就应用）
   loadTheme();
+
+  // ========== 截图导入日程事件绑定 ==========
+  const scheduleImportBtn = document.getElementById('scheduleImportBtn');
+  if (scheduleImportBtn) {
+    scheduleImportBtn.addEventListener('click', openImportDialog);
+  }
+
+  const importCancelBtn = document.getElementById('importCancelBtn');
+  if (importCancelBtn) {
+    importCancelBtn.addEventListener('click', closeImportDialog);
+  }
+
+  const importConfirmBtn = document.getElementById('importConfirmBtn');
+  if (importConfirmBtn) {
+    importConfirmBtn.addEventListener('click', executeImport);
+  }
+
+  const importOverlay = document.getElementById('importOverlay');
+  if (importOverlay) {
+    importOverlay.addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeImportDialog();
+    });
+  }
+
+  // 粘贴区域事件
+  const importPasteZone = document.getElementById('importPasteZone');
+  if (importPasteZone) {
+    importPasteZone.addEventListener('paste', handleImportPaste);
+    // 也监听整个弹窗的粘贴事件，方便用户直接 Ctrl+V
+    importOverlay.addEventListener('paste', handleImportPaste);
+  }
 
   // 启动认证
   setupAuth();
