@@ -2531,23 +2531,79 @@ async function runOCR(imageBlob) {
   }
 }
 
-// 解析 OCR 文本为日程项
+// 解析 OCR 文本为日程项（支持日期检测）
 function parseImportText(text) {
   const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
   importParsedItems = [];
 
+  // 第一步：尝试从文本中提取年月信息（如 "2026年3月" 或 "2026/3" 或 "2026.3"）
+  let baseYear = calYear;
+  let baseMonth = calMonth; // 0-indexed
   for (const line of lines) {
+    const ymMatch = line.match(/(\d{4})\s*[年/.\-]\s*(\d{1,2})\s*月?/);
+    if (ymMatch) {
+      baseYear = +ymMatch[1];
+      baseMonth = +ymMatch[2] - 1; // 转 0-indexed
+      break;
+    }
+  }
+
+  // 第二步：尝试检测日期上下文（月视图模式）
+  // 月视图中，日期数字（1-31）会出现在行首或单独一行，后面跟着该日下的日程
+  let currentDay = null;
+  let hasDateContext = false; // 是否检测到了日期上下文
+
+  for (const line of lines) {
+    // 跳过年月标题行
+    if (line.match(/^\d{4}\s*[年/.\-]\s*\d{1,2}\s*月?/) || line.match(/^[一二三四五六日月火水木金土周]+$/)) continue;
+
+    // 检测日期数字：独立的 1-31 数字（可能被 OCR 识别为一行的开头）
+    // 匹配模式："3" 或 "13" 单独出现，或 "3月3日"
+    const dayMatch = line.match(/^(\d{1,2})\s*$/);
+    if (dayMatch) {
+      const d = +dayMatch[1];
+      if (d >= 1 && d <= 31) {
+        currentDay = d;
+        hasDateContext = true;
+        continue;
+      }
+    }
+
+    // 检测行首带日期的日程：如 "3 10:00 开会" 或 "15 ● 10:00 xxx"
+    const dayPrefixMatch = line.match(/^(\d{1,2})\s+[·•●]?\s*(\d{1,2})[:\s：](\d{2})/);
+    if (dayPrefixMatch) {
+      const d = +dayPrefixMatch[1];
+      if (d >= 1 && d <= 31) {
+        currentDay = d;
+        hasDateContext = true;
+        // 继续解析这一行的日程（去掉日期前缀）
+        const restLine = line.replace(/^\d{1,2}\s+/, '');
+        const parsed = parseScheduleLine(restLine);
+        if (parsed) {
+          const dateStr = `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+          const isDup = importParsedItems.some(p => p.text === parsed.text && p.time === parsed.time && p.date === dateStr);
+          if (!isDup) {
+            importParsedItems.push({ ...parsed, date: dateStr, checked: true });
+          }
+        }
+        continue;
+      }
+    }
+
+    // 正常日程行解析
     const parsed = parseScheduleLine(line);
     if (parsed) {
-      // 去重：避免同文本重复
-      const isDup = importParsedItems.some(p => p.text === parsed.text && p.time === parsed.time);
+      const dateStr = currentDay
+        ? `${baseYear}-${String(baseMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`
+        : null;
+      const isDup = importParsedItems.some(p => p.text === parsed.text && p.time === parsed.time && p.date === dateStr);
       if (!isDup) {
-        importParsedItems.push({ ...parsed, checked: true });
+        importParsedItems.push({ ...parsed, date: dateStr, checked: true });
       }
     }
   }
 
-  // 如果单行解析没结果，尝试更宽松的合并解析
+  // 如果没有检测到日期上下文，尝试更宽松的合并解析
   if (importParsedItems.length === 0) {
     const fullText = lines.join(' ');
     const allTimes = [...fullText.matchAll(/(\d{1,2})[:\s：](\d{2})\s*([^\d\n]{1,30})/g)];
@@ -2557,9 +2613,16 @@ function parseImportText(text) {
         const time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
         const cleanText = desc.replace(/^[·•\-\s]+/, '').trim();
         if (cleanText && cleanText.length > 0) {
-          importParsedItems.push({ time, endTime: null, text: cleanText, checked: true });
+          importParsedItems.push({ time, endTime: null, text: cleanText, date: null, checked: true });
         }
       }
+    }
+  }
+
+  // 如果没有日期信息的项目，默认使用当前选中日期
+  for (const item of importParsedItems) {
+    if (!item.date) {
+      item.date = dateKey(selectedDate);
     }
   }
 
@@ -2620,7 +2683,7 @@ function parseScheduleLine(line) {
   return null;
 }
 
-// 渲染导入结果列表
+// 渲染导入结果列表（按日期分组）
 function renderImportResults() {
   const resultsEl = document.getElementById('importResults');
   const listEl = document.getElementById('importResultsList');
@@ -2641,28 +2704,99 @@ function renderImportResults() {
   countEl.textContent = `${importParsedItems.length} 项`;
   resultsEl.style.display = 'block';
 
-  listEl.innerHTML = importParsedItems.map((item, i) => {
-    const endStr = item.endTime ? `→ ${item.endTime}` : '';
-    return `
-      <label class="import-result-item">
-        <input type="checkbox" ${item.checked ? 'checked' : ''} data-index="${i}">
-        <span class="import-result-time">${item.time}</span>
-        <span class="import-result-text">${escapeHtml(item.text)}</span>
-        ${endStr ? `<span class="import-result-end">${endStr}</span>` : ''}
-      </label>
-    `;
-  }).join('');
+  // 按日期分组
+  const grouped = {};
+  importParsedItems.forEach((item, i) => {
+    const d = item.date || dateKey(selectedDate);
+    if (!grouped[d]) grouped[d] = [];
+    grouped[d].push({ ...item, _index: i });
+  });
 
-  // 绑定 checkbox 事件
-  listEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+  // 按日期排序
+  const sortedDates = Object.keys(grouped).sort();
+
+  // 判断是否有多个不同日期
+  const multiDate = sortedDates.length > 1;
+
+  let html = '';
+  for (const dateStr of sortedDates) {
+    const items = grouped[dateStr];
+    // 格式化日期为友好显示
+    if (multiDate) {
+      const d = new Date(dateStr + 'T00:00:00');
+      const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+      const today = dateKey(new Date());
+      const label = dateStr === today ? '今天' : `${d.getMonth() + 1}月${d.getDate()}日 周${weekDays[d.getDay()]}`;
+      html += `<div class="import-date-group">
+        <div class="import-date-header">
+          <span class="import-date-label">${label}</span>
+          <span class="import-date-str">${dateStr}</span>
+          <label class="import-date-toggle"><input type="checkbox" checked data-date="${dateStr}" class="import-date-check"> 全选</label>
+        </div>`;
+    }
+
+    for (const item of items) {
+      const endStr = item.endTime ? `→ ${item.endTime}` : '';
+      html += `
+        <label class="import-result-item">
+          <input type="checkbox" ${item.checked ? 'checked' : ''} data-index="${item._index}">
+          <span class="import-result-time">${item.time}</span>
+          <span class="import-result-text">${escapeHtml(item.text)}</span>
+          ${endStr ? `<span class="import-result-end">${endStr}</span>` : ''}
+        </label>`;
+    }
+
+    if (multiDate) {
+      html += `</div>`;
+    }
+  }
+
+  listEl.innerHTML = html;
+
+  // 绑定单项 checkbox 事件
+  listEl.querySelectorAll('input[type="checkbox"][data-index]').forEach(cb => {
     cb.addEventListener('change', () => {
       const idx = +cb.dataset.index;
       importParsedItems[idx].checked = cb.checked;
+      // 更新日期全选状态
+      updateDateGroupChecks(listEl);
+      updateImportConfirmBtn();
+    });
+  });
+
+  // 绑定日期全选 checkbox 事件
+  listEl.querySelectorAll('.import-date-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const dateStr = cb.dataset.date;
+      const checked = cb.checked;
+      // 找到该日期下所有项目
+      importParsedItems.forEach((item, i) => {
+        if ((item.date || dateKey(selectedDate)) === dateStr) {
+          item.checked = checked;
+        }
+      });
+      // 更新 UI
+      const group = cb.closest('.import-date-group');
+      if (group) {
+        group.querySelectorAll('input[type="checkbox"][data-index]').forEach(c => { c.checked = checked; });
+      }
       updateImportConfirmBtn();
     });
   });
 
   updateImportConfirmBtn();
+}
+
+// 更新日期组全选状态
+function updateDateGroupChecks(listEl) {
+  listEl.querySelectorAll('.import-date-check').forEach(groupCb => {
+    const dateStr = groupCb.dataset.date;
+    const group = groupCb.closest('.import-date-group');
+    if (!group) return;
+    const itemCbs = group.querySelectorAll('input[type="checkbox"][data-index]');
+    const allChecked = [...itemCbs].every(c => c.checked);
+    groupCb.checked = allChecked;
+  });
 }
 
 // 显示文本粘贴备选输入
@@ -2708,7 +2842,7 @@ function updateImportConfirmBtn() {
   btn.textContent = checkedCount > 0 ? `导入选中项 (${checkedCount})` : '导入选中项';
 }
 
-// 执行批量导入
+// 执行批量导入（支持多日期）
 async function executeImport() {
   const itemsToImport = importParsedItems.filter(p => p.checked);
   if (itemsToImport.length === 0) return;
@@ -2717,9 +2851,11 @@ async function executeImport() {
   btn.disabled = true;
   btn.textContent = '导入中...';
 
-  const key = dateKey(selectedDate);
+  const dateSet = new Set(); // 记录涉及的日期
 
   for (const item of itemsToImport) {
+    const key = item.date || dateKey(selectedDate);
+    dateSet.add(key);
     const fullText = `${item.time}${item.text}`;
 
     // 检查是否已存在同样的日程
@@ -2771,10 +2907,14 @@ async function executeImport() {
   closeImportDialog();
 
   // 显示导入成功提示
+  const dateCount = dateSet.size;
+  const msg = dateCount > 1
+    ? `✅ 已导入 ${itemsToImport.length} 条日程到 ${dateCount} 个日期`
+    : `✅ 已导入 ${itemsToImport.length} 条日程`;
   const container = document.getElementById('undoToastContainer');
   const toast = document.createElement('div');
   toast.className = 'undo-toast';
-  toast.innerHTML = `<span class="undo-toast-text">✅ 已导入 ${itemsToImport.length} 条日程</span>`;
+  toast.innerHTML = `<span class="undo-toast-text">${msg}</span>`;
   container.appendChild(toast);
   setTimeout(() => {
     toast.classList.add('hiding');

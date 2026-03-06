@@ -1609,8 +1609,56 @@ body::after {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 240px;
+  max-height: 300px;
   overflow-y: auto;
+}
+
+.import-date-group {
+  margin-bottom: 8px;
+}
+
+.import-date-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 4px;
+  font-size: 0.78rem;
+  color: var(--text-light);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+  position: sticky;
+  top: 0;
+  background: var(--card-bg);
+  z-index: 1;
+}
+
+.import-date-label {
+  font-weight: 700;
+  color: var(--primary-dark);
+  font-size: 0.82rem;
+}
+
+.import-date-str {
+  font-size: 0.7rem;
+  color: var(--text-lighter);
+  font-variant-numeric: tabular-nums;
+}
+
+.import-date-toggle {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--text-lighter);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.import-date-toggle input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--primary);
+  cursor: pointer;
 }
 
 .import-result-item {
