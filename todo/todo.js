@@ -262,11 +262,10 @@ async function carryOverUnfinishedTodos() {
   const today = todayKey();
 
   const todayItems = todos[today] || [];
-  // 去重：只看 text，不区分 carriedFrom 来源日期，防止同文本任务从不同天重复顺延
+  // 去重：只看 text，防止同文本任务从不同天重复顺延
   const existingTexts = new Set(todayItems.map(t => t.text));
 
   // 从云端查询今天已存在的所有待办（含顺延），确保幂等
-  // 即使本地缓存中没有，云端已有的也不再重复创建
   try {
     const { data: cloudTodayItems } = await withTimeout(
       _supaClient.from('todos').select('text')
@@ -281,6 +280,10 @@ async function carryOverUnfinishedTodos() {
     // 查询失败时继续用本地数据判断
   }
 
+  // 同时收集：今天已存在的文本（含已完成的），避免把已完成任务又顺延回来
+  // 即：如果今天已有同文本的任务（不管完成与否），都不需要顺延
+  // existingTexts 已经包含了这些
+
   const tasksToCarry = [];
 
   for (let i = 1; i <= 7; i++) {
@@ -289,10 +292,9 @@ async function carryOverUnfinishedTodos() {
     const key = dateKey(d);
     const items = todos[key] || [];
     items.forEach(item => {
-      if (!item.done && !item.repeat
+      if (!item.done && !item.repeat && !item.carried
         && !existingTexts.has(item.text)) {
         tasksToCarry.push({ ...item, originalDate: key });
-        // 标记已处理，防止同一文本从多天重复顺延
         existingTexts.add(item.text);
       }
     });
@@ -301,6 +303,13 @@ async function carryOverUnfinishedTodos() {
   if (tasksToCarry.length === 0) return;
 
   for (const task of tasksToCarry) {
+    // 先标记原始任务为 carried（本地），防止后续再次顺延
+    const originalItems = todos[task.originalDate] || [];
+    const originalItem = originalItems.find(t => t.text === task.text && !t.done);
+    if (originalItem) {
+      originalItem.carried = true;
+    }
+
     try {
       const { data, error } = await withTimeout(
         _supaClient.from('todos').insert({
@@ -347,20 +356,6 @@ async function carryOverUnfinishedTodos() {
         endTime: task.endTime || null,
         order: todos[today].length
       });
-    }
-
-    // 顺延后将原始日期的任务标记为已完成，防止下次再次顺延
-    const originalItems = todos[task.originalDate] || [];
-    const originalItem = originalItems.find(t => t.text === task.text && !t.done);
-    if (originalItem) {
-      originalItem.done = true;
-      // 同步到云端
-      if (originalItem.id && !String(originalItem.id).startsWith('local_')) {
-        withTimeout(
-          _supaClient.from('todos').update({ done: true }).eq('id', originalItem.id),
-          8000
-        ).catch(() => {});
-      }
     }
   }
 }
@@ -483,10 +478,9 @@ function getVirtualRepeatingTodos(dateKey) {
   Object.values(templates).forEach(template => {
     if (!dateMatchesRepeat(dateKey, template.repeat, template.createdAt)) return;
 
-    // 如果该日期已有此重复任务的实体，跳过
-    const alreadyExists = existingItems.some(t =>
-      t.text === template.text && t.repeat && JSON.stringify(t.repeat) === JSON.stringify(template.repeat)
-    );
+    // 如果该日期已有同文本的任务（无论是否标记为重复），跳过
+    // 这避免了实体任务 repeat 字段丢失时虚拟任务仍被生成的问题
+    const alreadyExists = existingItems.some(t => t.text === template.text);
     if (alreadyExists) return;
 
     virtualItems.push({
@@ -591,18 +585,59 @@ async function loadTodosFromCloud() {
       }
     });
 
+    // 跨日期修复：收集所有已完成任务的文本，如果今天有未完成的顺延副本且原始日期已完成，标记并清理
+    const completedTexts = new Set();
+    Object.keys(newTodos).forEach(dk => {
+      (newTodos[dk] || []).forEach(item => {
+        if (item.done) completedTexts.add(item.text);
+      });
+    });
+
+    // 清理：如果某个任务在任何日期已完成，今天的未完成顺延副本应被清理
+    const today = todayKey();
+    const todayList = newTodos[today] || [];
+    const cleanupIds = [];
+    newTodos[today] = todayList.filter(item => {
+      if (item.carriedFrom && !item.done && completedTexts.has(item.text)) {
+        // 这条顺延任务的原文本在其他日期已完成，删除它
+        cleanupIds.push(item.id);
+        return false;
+      }
+      return true;
+    });
+
+    // 异步清理云端的这些脏数据
+    if (cleanupIds.length > 0 && currentUser) {
+      cleanupIds.forEach(id => {
+        if (id && !String(id).startsWith('local_')) {
+          withTimeout(_supaClient.from('todos').delete().eq('id', id), 8000)
+            .catch(() => {});
+        }
+      });
+    }
+
     // 从本地备份恢复子任务和重复任务信息（云端表没有这些字段）
     const localBackup = getLocalTodosBackup();
     if (localBackup) {
       Object.keys(newTodos).forEach(dk => {
         const localItems = localBackup[dk] || [];
         newTodos[dk].forEach(item => {
-          const localItem = localItems.find(li => li.id === item.id || li.text === item.text);
+          // 优先按 id 匹配（精确），其次按 text 匹配（模糊）
+          const localItemById = localItems.find(li => li.id === item.id);
+          const localItemByText = !localItemById ? localItems.find(li => li.text === item.text) : null;
+          const localItem = localItemById || localItemByText;
           if (localItem) {
             item.subtasks = localItem.subtasks || [];
-            item.repeat = localItem.repeat || null;
-            item.time = localItem.time || null;
-            item.endTime = localItem.endTime || null;
+            // repeat 字段仅在 id 精确匹配时恢复，避免跨记录误赋值
+            if (localItemById) {
+              item.repeat = localItem.repeat || null;
+            }
+            // carried 标记也从本地恢复
+            if (localItem.carried) {
+              item.carried = true;
+            }
+            item.time = localItem.time || item.time || null;
+            item.endTime = localItem.endTime || item.endTime || null;
             if (localItem.order !== undefined) item.order = localItem.order;
           }
         });
@@ -772,12 +807,16 @@ function deduplicateTodos() {
         seen.set(key, item);
         deduped.push(item);
       } else {
-        // 如果新项已完成而旧项未完成，替换为已完成的版本
         const existing = seen.get(key);
+        // 优先保留已完成的版本
         if (item.done && !existing.done) {
           const idx = deduped.indexOf(existing);
           if (idx !== -1) deduped[idx] = item;
           seen.set(key, item);
+        }
+        // 合并 carried 标记
+        if (item.carried || existing.carried) {
+          seen.get(key).carried = true;
         }
       }
     });
@@ -948,8 +987,26 @@ function renderTodoList() {
   const timedItems = items.filter(t => t.time);
   const allDayItems = items.filter(t => !t.time);
 
+  // 日程去重：同文本的日程只保留一条（优先保留已完成的）
+  const seenSchedule = new Map();
+  const dedupedTimed = [];
+  timedItems.forEach(item => {
+    const k = item.text;
+    if (!seenSchedule.has(k)) {
+      seenSchedule.set(k, item);
+      dedupedTimed.push(item);
+    } else {
+      const existing = seenSchedule.get(k);
+      if (item.done && !existing.done) {
+        const idx = dedupedTimed.indexOf(existing);
+        if (idx !== -1) dedupedTimed[idx] = item;
+        seenSchedule.set(k, item);
+      }
+    }
+  });
+
   // 渲染左侧日程面板
-  renderSchedulePanel(timedItems);
+  renderSchedulePanel(dedupedTimed);
 
   // 右侧只显示全天待办
   let filteredItems = [...allDayItems];
