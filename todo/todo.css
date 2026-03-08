@@ -1684,6 +1684,37 @@ body::after {
   color: var(--text-light);
 }
 
+.edit-repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.edit-repeat-row > span {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.edit-repeat-select,
+.edit-repeat-sub {
+  padding: 6px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.edit-repeat-select:focus,
+.edit-repeat-sub:focus {
+  border-color: var(--primary);
+}
+
 .edit-actions {
   display: flex;
   gap: 12px;

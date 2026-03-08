@@ -520,6 +520,57 @@ function getVirtualRepeatingTodos(dateKey) {
   return virtualItems;
 }
 
+// 将虚拟重复任务实例化为真实记录（用于编辑）
+async function materializeVirtualTodo(virtualId) {
+  const key = dateKey(selectedDate);
+  const allItems = getTodosForDate(key);
+  const virtualItem = allItems.find(t => t.id === virtualId);
+  if (!virtualItem) return null;
+
+  const newItem = {
+    id: tempId(),
+    text: virtualItem.text,
+    priority: virtualItem.priority,
+    done: virtualItem.done,
+    createdAt: new Date().toISOString(),
+    carriedFrom: null,
+    subtasks: [],
+    repeat: virtualItem.repeat ? { ...virtualItem.repeat } : null,
+    time: virtualItem.time || null,
+    endTime: virtualItem.endTime || null,
+    order: (todos[key] || []).length
+  };
+
+  if (!todos[key]) todos[key] = [];
+  todos[key].push(newItem);
+
+  // 同步到云端
+  if (currentUser) {
+    try {
+      const { data, error } = await withTimeout(
+        _supaClient.from('todos').insert({
+          user_id: currentUser.id,
+          date: key,
+          text: newItem.text,
+          priority: newItem.priority,
+          done: newItem.done,
+          time: newItem.time || null,
+          end_time: newItem.endTime || null
+        }).select().single(),
+        8000
+      );
+      if (!error && data) {
+        newItem.id = data.id;
+      }
+    } catch (e) {}
+  }
+
+  backupTodosToLocal();
+  renderTodoList();
+  updateTodoHeader();
+  return newItem.id;
+}
+
 // 判断某日期是否有任何待办（含虚拟重复）
 function dateHasTodos(dateKey) {
   if (todos[dateKey] && todos[dateKey].length > 0) return true;
@@ -1057,7 +1108,7 @@ function updateTodoHeader() {
     titleEl.textContent = formatDate(selectedDate) + ' 的待办';
   }
 
-  const items = getTodosForDate(key);
+  const items = getTodosForDate(key).filter(t => !t.time); // 只计算待办，不含日程
   if (items.length === 0) {
     progressEl.textContent = '';
   } else {
@@ -1225,9 +1276,14 @@ function renderSchedulePanel(timedItems) {
 
   // 绑定日程点击事件（打开编辑弹窗）
   timeline.querySelectorAll('.t-item').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', async () => {
       const id = el.dataset.id;
-      if (id && !id.startsWith('virtual_')) {
+      if (!id) return;
+      if (id.startsWith('virtual_')) {
+        // 虚拟重复任务：先实例化再编辑
+        const realId = await materializeVirtualTodo(id);
+        if (realId) openEditDialog(realId);
+      } else {
         openEditDialog(id);
       }
     });
@@ -1301,10 +1357,14 @@ function bindTodoEvents(listEl) {
 
   // 点击文字编辑
   listEl.querySelectorAll('.todo-text').forEach(el => {
-    el.addEventListener('click', (e) => {
+    el.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = el.dataset.id;
-      if (id.startsWith('virtual_')) return;
+      if (id.startsWith('virtual_')) {
+        const realId = await materializeVirtualTodo(id);
+        if (realId) openEditDialog(realId);
+        return;
+      }
       openEditDialog(id);
     });
   });
@@ -1460,6 +1520,32 @@ function openEditDialog(id) {
   const target = document.querySelector(`#editPriorityDots .dot-btn[data-priority="${item.priority}"]`);
   if (target) target.classList.add('selected');
 
+  // 重复设置
+  const editRepeatType = document.getElementById('editRepeatType');
+  const editRepeatWeekday = document.getElementById('editRepeatWeekday');
+  const editRepeatMonthday = document.getElementById('editRepeatMonthday');
+  if (editRepeatType) {
+    if (item.repeat && item.repeat.type) {
+      editRepeatType.value = item.repeat.type;
+      if (item.repeat.type === 'weekly') {
+        editRepeatWeekday.style.display = '';
+        editRepeatMonthday.style.display = 'none';
+        editRepeatWeekday.value = item.repeat.value !== undefined ? item.repeat.value : 1;
+      } else if (item.repeat.type === 'monthly') {
+        editRepeatWeekday.style.display = 'none';
+        editRepeatMonthday.style.display = '';
+        editRepeatMonthday.value = item.repeat.value !== undefined ? item.repeat.value : 1;
+      } else {
+        editRepeatWeekday.style.display = 'none';
+        editRepeatMonthday.style.display = 'none';
+      }
+    } else {
+      editRepeatType.value = 'none';
+      editRepeatWeekday.style.display = 'none';
+      editRepeatMonthday.style.display = 'none';
+    }
+  }
+
   const overlay = document.getElementById('editOverlay');
   overlay.style.display = 'flex';
   overlay.classList.add('show');
@@ -1506,6 +1592,18 @@ function saveEdit() {
   const time = hasTimeRow ? getEditTime() : null;
   const endTime = hasTimeRow ? getEditEndTime() : null;
 
+  // 读取重复设置
+  let repeat = null;
+  const editRepeatType = document.getElementById('editRepeatType');
+  if (editRepeatType && editRepeatType.value !== 'none') {
+    repeat = { type: editRepeatType.value };
+    if (repeat.type === 'weekly') {
+      repeat.value = +document.getElementById('editRepeatWeekday').value;
+    } else if (repeat.type === 'monthly') {
+      repeat.value = +document.getElementById('editRepeatMonthday').value;
+    }
+  }
+
   const items = todos[editingTodoDate] || [];
   const item = items.find(t => t.id === editingTodoId);
   if (!item) return;
@@ -1514,6 +1612,7 @@ function saveEdit() {
   item.priority = priority;
   item.time = time;
   item.endTime = endTime;
+  item.repeat = repeat;
 
   if (!editingTodoId.startsWith('local_')) {
     withTimeout(
@@ -1776,7 +1875,7 @@ function spawnConfetti(todoEl) {
 // ========== 进度条 ==========
 function updateProgressBar() {
   const key = dateKey(selectedDate);
-  const allItems = getTodosForDate(key);
+  const allItems = getTodosForDate(key).filter(t => !t.time); // 只计算待办，不含日程
   const bar = document.getElementById('todoProgressBar');
   const fill = document.getElementById('progressFill');
   const doneEl = document.getElementById('progressDone');
@@ -2912,6 +3011,27 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#editPriorityDots .dot-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
   });
+
+  // 编辑弹窗重复类型切换
+  const editRepeatTypeEl = document.getElementById('editRepeatType');
+  const editRepeatWeekdayEl = document.getElementById('editRepeatWeekday');
+  const editRepeatMonthdayEl = document.getElementById('editRepeatMonthday');
+  if (editRepeatTypeEl) {
+    editRepeatTypeEl.addEventListener('change', () => {
+      const val = editRepeatTypeEl.value;
+      editRepeatWeekdayEl.style.display = val === 'weekly' ? '' : 'none';
+      editRepeatMonthdayEl.style.display = val === 'monthly' ? '' : 'none';
+    });
+  }
+  // 填充编辑弹窗月份日期选项
+  if (editRepeatMonthdayEl && editRepeatMonthdayEl.options.length === 0) {
+    for (let i = 1; i <= 31; i++) {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${i}号`;
+      editRepeatMonthdayEl.appendChild(opt);
+    }
+  }
 
   // 待办筛选
   document.querySelectorAll('.filter-btn').forEach(btn => {

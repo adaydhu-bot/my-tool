@@ -410,6 +410,26 @@
           <button class="dot-btn low" data-priority="low" title="低优先级"></button>
         </div>
       </div>
+      <div class="edit-repeat-row" id="editRepeatRow">
+        <span>重复：</span>
+        <select id="editRepeatType" class="edit-repeat-select">
+          <option value="none">不重复</option>
+          <option value="daily">每天</option>
+          <option value="weekdays">仅工作日</option>
+          <option value="weekly">每周</option>
+          <option value="monthly">每月</option>
+        </select>
+        <select id="editRepeatWeekday" class="edit-repeat-sub" style="display:none;">
+          <option value="1">周一</option>
+          <option value="2">周二</option>
+          <option value="3">周三</option>
+          <option value="4">周四</option>
+          <option value="5">周五</option>
+          <option value="6">周六</option>
+          <option value="0">周日</option>
+        </select>
+        <select id="editRepeatMonthday" class="edit-repeat-sub" style="display:none;"></select>
+      </div>
       <div class="edit-actions">
         <button class="edit-cancel-btn" id="editCancelBtn">取消</button>
         <button class="edit-save-btn" id="editSaveBtn">保存</button>
