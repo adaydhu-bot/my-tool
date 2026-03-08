@@ -15,7 +15,9 @@ let selectedDate = new Date();
 let calYear, calMonth;
 let currentFilter = 'all';
 let currentSummaryRange = 'week';
-let reportWeekOffset = 0; // 0=本周, -1=上周, etc.
+let reportWeekOffset = -1; // -1=上周, 0=本周, etc.
+let reportMonthOffset = -1; // -1=上月, 0=本月, etc.
+let currentSummaryMode = 'week'; // 'week' | 'month'
 let currentIdeaTag = 'all';
 let currentIdeaSort = 'newest';
 let currentIdeaStatus = 'all';
@@ -2111,8 +2113,6 @@ function renderSummary() {
   document.getElementById('statStreak').textContent = stats.streak;
 
   drawBarChart(stats.dailyLabels, stats.dailyCounts);
-  drawPieChart(stats.priorityCounts);
-  renderHeatmap();
 }
 
 function drawBarChart(labels, data) {
@@ -2192,117 +2192,7 @@ function drawBarChart(labels, data) {
   });
 }
 
-function drawPieChart(priorityCounts) {
-  const canvas = document.getElementById('pieChart');
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = 220 * dpr;
-  ctx.scale(dpr, dpr);
-
-  const W = rect.width;
-  const H = 220;
-  ctx.clearRect(0, 0, W, H);
-
-  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#4A3728';
-  const textLight = getComputedStyle(document.documentElement).getPropertyValue('--text-light').trim() || '#A08B7A';
-
-  const data = [
-    { label: '高优先级', value: priorityCounts.high, color: '#FF6B6B' },
-    { label: '中优先级', value: priorityCounts.mid, color: '#FFD166' },
-    { label: '低优先级', value: priorityCounts.low, color: '#6BCB77' }
-  ];
-
-  const total = data.reduce((s, d) => s + d.value, 0);
-
-  if (total === 0) {
-    ctx.fillStyle = textLight;
-    ctx.font = '14px "Microsoft YaHei", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('暂无已完成数据', W / 2, H / 2);
-    return;
-  }
-
-  const cx = W / 2 - 50;
-  const cy = H / 2;
-  const radius = 75;
-  let startAngle = -Math.PI / 2;
-
-  data.forEach(d => {
-    if (d.value === 0) return;
-    const sliceAngle = (d.value / total) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, radius, startAngle, startAngle + sliceAngle);
-    ctx.closePath();
-    ctx.fillStyle = d.color;
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    startAngle += sliceAngle;
-  });
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, 40, 0, Math.PI * 2);
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card-bg').trim() || '#fff';
-  ctx.fill();
-  ctx.fillStyle = textColor;
-  ctx.font = 'bold 16px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(total, cx, cy);
-
-  const legendX = cx + radius + 30;
-  let legendY = cy - 36;
-  data.forEach(d => {
-    ctx.fillStyle = d.color;
-    ctx.beginPath();
-    ctx.arc(legendX, legendY + 6, 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = textColor;
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${d.label} (${d.value})`, legendX + 14, legendY + 6);
-    legendY += 24;
-  });
-}
-
-function renderHeatmap() {
-  const container = document.getElementById('heatmap');
-  const today = new Date();
-  const days = 30;
-  let html = '';
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const key = dateKey(d);
-    const items = todos[key] || [];
-    const total = items.length;
-    const done = items.filter(t => t.done).length;
-    const rate = total > 0 ? done / total : 0;
-
-    let level = '';
-    if (total === 0) level = '';
-    else if (rate <= 0.25) level = 'level-1';
-    else if (rate <= 0.5) level = 'level-2';
-    else if (rate <= 0.75) level = 'level-3';
-    else level = 'level-4';
-
-    const parts = key.split('-');
-    const tip = `${+parts[1]}/${+parts[2]}: ${done}/${total} 已完成`;
-    html += `<div class="heatmap-day ${level}" data-tip="${tip}"></div>`;
-  }
-
-  container.innerHTML = html;
-}
-
-// ========== 周报功能 ==========
+// ========== 周报 & 月总结 ==========
 function getWeekDateRange(offset) {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -2317,14 +2207,91 @@ function getWeekDateRange(offset) {
   return dates;
 }
 
-function getMotivationText(rate, doneCount, totalCount) {
-  if (totalCount === 0) return '🌱 这周还没有任务记录，开始新的一周吧！';
-  if (rate === 100) return '🏆 完美！全部任务都完成了，你太厉害了！给自己一个大大的赞！';
-  if (rate >= 80) return '🌟 表现超棒！完成率很高，继续保持这份节奏！';
-  if (rate >= 60) return '💪 做得不错！超过半数任务完成了，再加把劲！';
-  if (rate >= 40) return '🚀 还有提升空间！把未完成的任务拆小一些，一步步来。';
-  if (rate >= 20) return '🔥 虽然完成率不高，但你已经在行动了，坚持就是胜利！';
-  return '💡 这周似乎有点忙。别焦虑，专注最重要的那一件事就好。';
+function getMonthDateRange(offset) {
+  const today = new Date();
+  const targetMonth = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+  const year = targetMonth.getFullYear();
+  const month = targetMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const dates = [];
+  for (let i = 1; i <= daysInMonth; i++) {
+    dates.push(dateKey(new Date(year, month, i)));
+  }
+  return dates;
+}
+
+function collectWeekData(dates) {
+  const completedItems = [];
+  const undoneItems = [];
+  let totalCount = 0;
+  let doneCount = 0;
+  const seen = new Set();
+
+  dates.forEach(dk => {
+    const items = getTodosForDate(dk);
+    const parts = dk.split('-');
+    const dayLabel = `${+parts[1]}/${+parts[2]}`;
+
+    items.forEach(item => {
+      const text = item.time ? stripTimeFromText(item.text) : item.text;
+      const key = text.trim();
+      totalCount++;
+      if (item.done) {
+        doneCount++;
+        if (!seen.has('done:' + key)) {
+          seen.add('done:' + key);
+          completedItems.push({ text: key, day: dayLabel, time: item.time || '' });
+        }
+      } else {
+        if (!seen.has('undone:' + key)) {
+          seen.add('undone:' + key);
+          undoneItems.push({ text: key, day: dayLabel });
+        }
+      }
+    });
+  });
+
+  const rate = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
+  return { completedItems, undoneItems, totalCount, doneCount, rate };
+}
+
+function generateWeekReview(completedItems, undoneItems, rate, doneCount, totalCount) {
+  if (totalCount === 0) return '这段时间没有任务记录，给自己安排点事做吧，新的开始从一件小事起步。';
+
+  const parts = [];
+
+  // 提及具体完成的事
+  if (completedItems.length > 0) {
+    const topItems = completedItems.slice(0, 3).map(i => `「${i.text}」`);
+    if (completedItems.length <= 3) {
+      parts.push(`你完成了${topItems.join('、')}，辛苦了`);
+    } else {
+      parts.push(`你完成了${topItems.join('、')}等 ${completedItems.length} 件事，辛苦了`);
+    }
+  }
+
+  // 根据完成率给出评价
+  if (rate === 100) {
+    parts.push('全部任务都搞定了，太厉害了！给自己放松一下吧');
+  } else if (rate >= 80) {
+    parts.push('完成率很高，保持这个节奏就好');
+  } else if (rate >= 60) {
+    parts.push('完成了大半，已经很不错了');
+  } else if (rate >= 40) {
+    parts.push('还有一些没做完，没关系，挑重要的先处理');
+  } else if (doneCount > 0) {
+    parts.push('虽然完成的不多，但你已经在行动了');
+  }
+
+  // 提及未完成的事
+  if (undoneItems.length > 0 && rate < 100) {
+    const topUndone = undoneItems.slice(0, 2).map(i => `「${i.text}」`);
+    parts.push(`${topUndone.join('、')}还没做完，这周继续加油`);
+  } else if (rate === 100) {
+    parts.push('这周继续加油 💪');
+  }
+
+  return parts.join('。') + '。';
 }
 
 function renderWeeklyReport() {
@@ -2344,56 +2311,25 @@ function renderWeeklyReport() {
     }
   }
 
-  // 收集数据
-  const completedItems = [];
-  const scheduleItems = [];
-  const undoneItems = [];
-  let totalCount = 0;
-  let doneCount = 0;
+  // 更新标题
+  const titleEl = document.getElementById('reportTitle');
+  if (titleEl) {
+    titleEl.textContent = reportWeekOffset === 0 ? '📋 本周进行中' : '📋 周总结';
+  }
 
-  dates.forEach(dk => {
-    const items = getTodosForDate(dk);
-    const parts = dk.split('-');
-    const dayLabel = `${+parts[1]}/${+parts[2]}`;
+  const { completedItems, undoneItems, totalCount, doneCount, rate } = collectWeekData(dates);
 
-    items.forEach(item => {
-      totalCount++;
-      if (item.done) {
-        doneCount++;
-        if (item.time) {
-          scheduleItems.push({ text: item.time ? stripTimeFromText(item.text) : item.text, day: dayLabel, time: item.time });
-        } else {
-          completedItems.push({ text: item.text, day: dayLabel });
-        }
-      } else {
-        if (item.time) {
-          scheduleItems.push({ text: item.time ? stripTimeFromText(item.text) : item.text, day: dayLabel, time: item.time });
-        } else {
-          undoneItems.push({ text: item.text, day: dayLabel });
-        }
-      }
-    });
-  });
-
-  const rate = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
-
-  // 激励文案
-  const motivEl = document.getElementById('reportMotivation');
-  if (motivEl) motivEl.textContent = getMotivationText(rate, doneCount, totalCount);
+  // 个性化评价
+  const reviewEl = document.getElementById('reportReview');
+  if (reviewEl) {
+    reviewEl.textContent = generateWeekReview(completedItems, undoneItems, rate, doneCount, totalCount);
+  }
 
   // 已完成列表
   const completedEl = document.getElementById('reportCompleted');
   if (completedEl) {
     completedEl.innerHTML = completedItems.length > 0
-      ? completedItems.map(i => `<div class="report-list-item"><span>${escapeHtml(i.text)}</span><small style="color:var(--text-lighter);margin-left:auto;white-space:nowrap;">${i.day}</small></div>`).join('')
-      : '<span class="report-empty">暂无</span>';
-  }
-
-  // 日程列表
-  const schedEl = document.getElementById('reportSchedules');
-  if (schedEl) {
-    schedEl.innerHTML = scheduleItems.length > 0
-      ? scheduleItems.map(i => `<div class="report-list-item schedule-item"><span>${i.time ? i.time + ' ' : ''}${escapeHtml(i.text)}</span><small style="color:var(--text-lighter);margin-left:auto;white-space:nowrap;">${i.day}</small></div>`).join('')
+      ? completedItems.map((item, i) => `<div class="report-list-item"><span class="report-item-num">${i + 1}.</span><span>${escapeHtml(item.text)}</span></div>`).join('')
       : '<span class="report-empty">暂无</span>';
   }
 
@@ -2401,8 +2337,8 @@ function renderWeeklyReport() {
   const undoneEl = document.getElementById('reportUndone');
   if (undoneEl) {
     undoneEl.innerHTML = undoneItems.length > 0
-      ? undoneItems.map(i => `<div class="report-list-item undone-item"><span>${escapeHtml(i.text)}</span><small style="color:var(--text-lighter);margin-left:auto;white-space:nowrap;">${i.day}</small></div>`).join('')
-      : '<span class="report-empty">全部完成！太棒了 🎉</span>';
+      ? undoneItems.map((item, i) => `<div class="report-list-item undone-item"><span class="report-item-num">${i + 1}.</span><span>${escapeHtml(item.text)}</span></div>`).join('')
+      : '<span class="report-empty">全部完成！🎉</span>';
   }
 
   // 底部统计
@@ -2412,9 +2348,154 @@ function renderWeeklyReport() {
   el('reportRateValue', rate + '%');
 }
 
+// ========== 月总结 ==========
+function getWeekNumber(dateStr) {
+  const d = new Date(dateStr.replace(/-/g, '/'));
+  const dayOfMonth = d.getDate();
+  return Math.ceil(dayOfMonth / 7);
+}
+
+function renderMonthlyReport() {
+  const dates = getMonthDateRange(reportMonthOffset);
+  if (dates.length === 0) return;
+
+  const firstDate = new Date(dates[0].replace(/-/g, '/'));
+  const year = firstDate.getFullYear();
+  const month = firstDate.getMonth() + 1;
+
+  // 更新月标签
+  const monthLabel = document.getElementById('monthLabel');
+  if (monthLabel) {
+    if (reportMonthOffset === 0) monthLabel.textContent = '本月';
+    else if (reportMonthOffset === -1) monthLabel.textContent = '上月';
+    else monthLabel.textContent = `${year}年${month}月`;
+  }
+
+  const titleEl = document.getElementById('monthReportTitle');
+  if (titleEl) {
+    titleEl.textContent = reportMonthOffset === 0 ? '📅 本月进行中' : '📅 月总结';
+  }
+
+  // 收集月数据，按周分组
+  let totalCount = 0;
+  let doneCount = 0;
+  const weekGroups = {};
+  const allCompleted = [];
+  const allUndone = [];
+  const seenDone = new Set();
+  const seenUndone = new Set();
+
+  dates.forEach(dk => {
+    const items = getTodosForDate(dk);
+    const weekNum = getWeekNumber(dk);
+    if (!weekGroups[weekNum]) weekGroups[weekNum] = { completed: [], undone: [] };
+
+    items.forEach(item => {
+      const text = item.time ? stripTimeFromText(item.text) : item.text;
+      const key = text.trim();
+      totalCount++;
+      if (item.done) {
+        doneCount++;
+        if (!seenDone.has(key)) {
+          seenDone.add(key);
+          weekGroups[weekNum].completed.push(key);
+          allCompleted.push(key);
+        }
+      } else {
+        if (!seenUndone.has(key)) {
+          seenUndone.add(key);
+          weekGroups[weekNum].undone.push(key);
+          allUndone.push(key);
+        }
+      }
+    });
+  });
+
+  const rate = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
+
+  // 月度评价
+  const reviewEl = document.getElementById('monthReview');
+  if (reviewEl) {
+    if (totalCount === 0) {
+      reviewEl.textContent = '这个月没有任务记录，下个月给自己定几个小目标吧。';
+    } else {
+      const parts = [];
+      if (allCompleted.length > 0) {
+        const top = allCompleted.slice(0, 5).map(t => `「${t}」`);
+        if (allCompleted.length <= 5) {
+          parts.push(`这个月你完成了${top.join('、')}，一共 ${doneCount} 件事`);
+        } else {
+          parts.push(`这个月你完成了${top.join('、')}等 ${allCompleted.length} 件事`);
+        }
+      }
+      if (rate >= 80) parts.push('效率很高，继续保持');
+      else if (rate >= 50) parts.push('完成了大半，做得不错');
+      else if (doneCount > 0) parts.push('虽然完成率不算高，但每一步都算数');
+      if (allUndone.length > 0 && rate < 100) {
+        parts.push(`还有 ${allUndone.length} 件事没做完，下个月优先处理吧`);
+      }
+      parts.push('辛苦了，继续加油 💪');
+      reviewEl.textContent = parts.join('。') + '';
+    }
+  }
+
+  // 按周分组渲染
+  const bodyEl = document.getElementById('monthReportBody');
+  if (bodyEl) {
+    const weekNums = Object.keys(weekGroups).map(Number).sort();
+    let html = '';
+
+    if (totalCount === 0) {
+      html = '<div class="report-empty" style="text-align:center;padding:20px;">暂无数据</div>';
+    } else {
+      // 已完成部分
+      html += '<div class="month-section"><div class="month-section-title">✅ 已完成</div>';
+      weekNums.forEach(wn => {
+        const items = weekGroups[wn].completed;
+        if (items.length > 0) {
+          html += `<div class="month-week-group"><div class="month-week-label">第${wn}周</div>`;
+          html += '<div class="month-week-items">';
+          items.forEach((text, i) => {
+            html += `<div class="report-list-item"><span class="report-item-num">${i + 1}.</span><span>${escapeHtml(text)}</span></div>`;
+          });
+          html += '</div></div>';
+        }
+      });
+      if (allCompleted.length === 0) html += '<div class="report-empty">暂无</div>';
+      html += '</div>';
+
+      // 未完成部分
+      html += '<div class="month-section"><div class="month-section-title">⏳ 未完成</div>';
+      const allUndoneList = [];
+      weekNums.forEach(wn => {
+        weekGroups[wn].undone.forEach(text => allUndoneList.push(text));
+      });
+      if (allUndoneList.length > 0) {
+        html += '<div class="month-week-items">';
+        allUndoneList.forEach((text, i) => {
+          html += `<div class="report-list-item undone-item"><span class="report-item-num">${i + 1}.</span><span>${escapeHtml(text)}</span></div>`;
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="report-empty">全部完成！🎉</div>';
+      }
+      html += '</div>';
+    }
+
+    bodyEl.innerHTML = html;
+  }
+
+  // 底部统计
+  const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  el('monthDoneCount', doneCount);
+  el('monthTotalCount', totalCount);
+  el('monthRateValue', rate + '%');
+}
+
 function renderSummaryFull() {
   renderSummary();
   renderWeeklyReport();
+  renderMonthlyReport();
 }
 
 // ================================================================
@@ -3391,6 +3472,42 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // 月总结导航
+  const monthPrev = document.getElementById('monthPrev');
+  const monthNext = document.getElementById('monthNext');
+  if (monthPrev) {
+    monthPrev.addEventListener('click', () => {
+      reportMonthOffset--;
+      renderMonthlyReport();
+    });
+  }
+  if (monthNext) {
+    monthNext.addEventListener('click', () => {
+      if (reportMonthOffset < 0) {
+        reportMonthOffset++;
+        renderMonthlyReport();
+      }
+    });
+  }
+
+  // 周总结/月总结切换
+  document.querySelectorAll('.summary-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.summary-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSummaryMode = btn.dataset.mode;
+      const weekCard = document.getElementById('weeklyReportCard');
+      const monthCard = document.getElementById('monthlyReportCard');
+      if (currentSummaryMode === 'week') {
+        weekCard.style.display = '';
+        monthCard.style.display = 'none';
+      } else {
+        weekCard.style.display = 'none';
+        monthCard.style.display = '';
+      }
+    });
+  });
 
   // 主题切换
   document.querySelectorAll('#themeOptions .theme-btn').forEach(btn => {

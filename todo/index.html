@@ -298,40 +298,7 @@
     <!-- ==================== 总结统计模块 ==================== -->
     <section class="tab-content" id="summarySection">
       <div class="summary-layout">
-        <!-- 周报卡片 -->
-        <div class="weekly-report-card card" id="weeklyReportCard">
-          <div class="report-header">
-            <h3 id="reportTitle">📋 本周周报</h3>
-            <div class="report-nav">
-              <button class="report-nav-btn" id="reportPrevWeek" title="上一周">‹</button>
-              <span class="report-week-label" id="reportWeekLabel">本周</span>
-              <button class="report-nav-btn" id="reportNextWeek" title="下一周">›</button>
-            </div>
-          </div>
-          <div class="report-motivation" id="reportMotivation"></div>
-          <div class="report-body">
-            <div class="report-section">
-              <div class="report-section-title">✅ 已完成</div>
-              <div class="report-list" id="reportCompleted"><span class="report-empty">暂无</span></div>
-            </div>
-            <div class="report-section">
-              <div class="report-section-title">📅 日程回顾</div>
-              <div class="report-list" id="reportSchedules"><span class="report-empty">暂无</span></div>
-            </div>
-            <div class="report-section">
-              <div class="report-section-title">⏳ 未完成 / 顺延</div>
-              <div class="report-list" id="reportUndone"><span class="report-empty">暂无</span></div>
-            </div>
-          </div>
-          <div class="report-summary-stats">
-            <span class="report-stat">完成 <strong id="reportDoneCount">0</strong> 项</span>
-            <span class="report-stat-sep">·</span>
-            <span class="report-stat">总计 <strong id="reportTotalCount">0</strong> 项</span>
-            <span class="report-stat-sep">·</span>
-            <span class="report-stat">完成率 <strong id="reportRateValue">0%</strong></span>
-          </div>
-        </div>
-
+        <!-- 顶部统计卡片 -->
         <div class="stats-row">
           <div class="stat-card card">
             <div class="stat-icon">✅</div>
@@ -362,23 +329,73 @@
             </div>
           </div>
         </div>
+
+        <!-- 周总结/月总结切换 -->
+        <div class="summary-mode-toggle card">
+          <button class="summary-mode-btn active" data-mode="week">📋 周总结</button>
+          <button class="summary-mode-btn" data-mode="month">📅 月总结</button>
+        </div>
+
+        <!-- ===== 周总结卡片 ===== -->
+        <div class="weekly-report-card card" id="weeklyReportCard">
+          <div class="report-header">
+            <h3 id="reportTitle">📋 上周总结</h3>
+            <div class="report-nav">
+              <button class="report-nav-btn" id="reportPrevWeek" title="上一周">‹</button>
+              <span class="report-week-label" id="reportWeekLabel">上周</span>
+              <button class="report-nav-btn" id="reportNextWeek" title="下一周">›</button>
+            </div>
+          </div>
+          <!-- 个性化评价 -->
+          <div class="report-review" id="reportReview"></div>
+          <div class="report-body-two-col">
+            <div class="report-section">
+              <div class="report-section-title">✅ 已完成</div>
+              <div class="report-list" id="reportCompleted"><span class="report-empty">暂无</span></div>
+            </div>
+            <div class="report-section">
+              <div class="report-section-title">⏳ 未完成</div>
+              <div class="report-list" id="reportUndone"><span class="report-empty">暂无</span></div>
+            </div>
+          </div>
+          <div class="report-summary-stats">
+            <span class="report-stat">完成 <strong id="reportDoneCount">0</strong> 项</span>
+            <span class="report-stat-sep">·</span>
+            <span class="report-stat">总计 <strong id="reportTotalCount">0</strong> 项</span>
+            <span class="report-stat-sep">·</span>
+            <span class="report-stat">完成率 <strong id="reportRateValue">0%</strong></span>
+          </div>
+        </div>
+
+        <!-- ===== 月总结卡片 ===== -->
+        <div class="monthly-report-card card" id="monthlyReportCard" style="display:none;">
+          <div class="report-header">
+            <h3 id="monthReportTitle">📅 月总结</h3>
+            <div class="report-nav">
+              <button class="report-nav-btn" id="monthPrev" title="上个月">‹</button>
+              <span class="report-week-label" id="monthLabel">上月</span>
+              <button class="report-nav-btn" id="monthNext" title="下个月">›</button>
+            </div>
+          </div>
+          <div class="report-review" id="monthReview"></div>
+          <div class="month-report-body" id="monthReportBody"></div>
+          <div class="report-summary-stats">
+            <span class="report-stat">完成 <strong id="monthDoneCount">0</strong> 项</span>
+            <span class="report-stat-sep">·</span>
+            <span class="report-stat">总计 <strong id="monthTotalCount">0</strong> 项</span>
+            <span class="report-stat-sep">·</span>
+            <span class="report-stat">完成率 <strong id="monthRateValue">0%</strong></span>
+          </div>
+        </div>
+
+        <!-- 趋势图 -->
         <div class="summary-toggle card">
           <button class="summary-tab active" data-range="week">本周</button>
           <button class="summary-tab" data-range="month">本月</button>
         </div>
-        <div class="charts-row">
-          <div class="chart-card card">
-            <h3>每日完成趋势</h3>
-            <canvas id="barChart" height="220"></canvas>
-          </div>
-          <div class="chart-card card">
-            <h3>优先级分布</h3>
-            <canvas id="pieChart" height="220"></canvas>
-          </div>
-        </div>
-        <div class="heatmap-card card">
-          <h3>完成率热力图</h3>
-          <div class="heatmap" id="heatmap"></div>
+        <div class="chart-card card">
+          <h3>每日完成趋势</h3>
+          <canvas id="barChart" height="220"></canvas>
         </div>
       </div>
     </section>
