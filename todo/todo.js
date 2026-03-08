@@ -260,9 +260,26 @@ function setupAuth() {
 // ========== 任务顺延 ==========
 async function carryOverUnfinishedTodos() {
   const today = todayKey();
+
   const todayItems = todos[today] || [];
   // 去重：只看 text，不区分 carriedFrom 来源日期，防止同文本任务从不同天重复顺延
   const existingTexts = new Set(todayItems.map(t => t.text));
+
+  // 从云端查询今天已存在的所有待办（含顺延），确保幂等
+  // 即使本地缓存中没有，云端已有的也不再重复创建
+  try {
+    const { data: cloudTodayItems } = await withTimeout(
+      _supaClient.from('todos').select('text')
+        .eq('user_id', currentUser.id)
+        .eq('date', today),
+      8000
+    );
+    if (cloudTodayItems) {
+      cloudTodayItems.forEach(ci => existingTexts.add(ci.text));
+    }
+  } catch (e) {
+    // 查询失败时继续用本地数据判断
+  }
 
   const tasksToCarry = [];
 
@@ -330,6 +347,20 @@ async function carryOverUnfinishedTodos() {
         endTime: task.endTime || null,
         order: todos[today].length
       });
+    }
+
+    // 顺延后将原始日期的任务标记为已完成，防止下次再次顺延
+    const originalItems = todos[task.originalDate] || [];
+    const originalItem = originalItems.find(t => t.text === task.text && !t.done);
+    if (originalItem) {
+      originalItem.done = true;
+      // 同步到云端
+      if (originalItem.id && !String(originalItem.id).startsWith('local_')) {
+        withTimeout(
+          _supaClient.from('todos').update({ done: true }).eq('id', originalItem.id),
+          8000
+        ).catch(() => {});
+      }
     }
   }
 }
@@ -525,19 +556,27 @@ async function loadTodosFromCloud() {
       });
     }
 
-    // 去重：同日期内同文本的任务只保留一条（保留最早创建的）
+    // 去重：同日期内同文本的任务只保留一条（保留已完成的优先，否则保留最早创建的）
     Object.keys(newTodos).forEach(dk => {
       const seen = new Map();
       const deduped = [];
       const duplicateIds = [];
       newTodos[dk].forEach(item => {
-        const key = item.text + '|' + (item.done ? '1' : '0');
+        const key = item.text;
         if (!seen.has(key)) {
           seen.set(key, item);
           deduped.push(item);
         } else {
-          // 标记重复项，稍后清理云端
-          duplicateIds.push(item.id);
+          // 如果新项已完成而旧项未完成，替换为已完成的版本
+          const existing = seen.get(key);
+          if (item.done && !existing.done) {
+            duplicateIds.push(existing.id);
+            const idx = deduped.indexOf(existing);
+            if (idx !== -1) deduped[idx] = item;
+            seen.set(key, item);
+          } else {
+            duplicateIds.push(item.id);
+          }
         }
       });
       newTodos[dk] = deduped;
@@ -722,7 +761,7 @@ async function restoreFromLocalBackup() {
 }
 
 // ========== 工具函数 ==========
-// 全局待办去重：同日期内同文本只保留一条（保留最早创建的）
+// 全局待办去重：同日期内同文本只保留一条（优先保留已完成的）
 function deduplicateTodos() {
   Object.keys(todos).forEach(dk => {
     const seen = new Map();
@@ -732,6 +771,14 @@ function deduplicateTodos() {
       if (!seen.has(key)) {
         seen.set(key, item);
         deduped.push(item);
+      } else {
+        // 如果新项已完成而旧项未完成，替换为已完成的版本
+        const existing = seen.get(key);
+        if (item.done && !existing.done) {
+          const idx = deduped.indexOf(existing);
+          if (idx !== -1) deduped[idx] = item;
+          seen.set(key, item);
+        }
       }
     });
     todos[dk] = deduped;
