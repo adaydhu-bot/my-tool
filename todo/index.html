@@ -228,11 +228,21 @@
 
         <div class="add-idea-form card">
           <textarea id="ideaInput" placeholder="记录你突然冒出来的灵感、想法或粘贴一个链接..." maxlength="500" rows="3"></textarea>
-          <div class="idea-form-bottom">
-            <div class="idea-tags-input">
-              <input type="text" id="ideaTagInput" placeholder="添加标签后回车" maxlength="10">
-              <div class="idea-new-tags" id="ideaNewTags"></div>
+          <div class="idea-form-tags-row">
+            <div class="idea-selected-tags" id="ideaNewTags"></div>
+            <div class="idea-tag-picker-wrap">
+              <button type="button" class="idea-tag-picker-btn" id="ideaTagPickerBtn">+ 添加标签</button>
+              <div class="idea-tag-picker-dropdown" id="ideaTagPickerDropdown">
+                <div class="idea-tag-picker-list" id="ideaTagPickerList"></div>
+                <div class="idea-tag-picker-create">
+                  <input type="text" id="ideaTagInput" placeholder="新建标签..." maxlength="10">
+                  <button type="button" id="ideaTagCreateBtn">创建</button>
+                </div>
+              </div>
             </div>
+          </div>
+          <div class="idea-form-bottom">
+            <div></div>
             <button class="add-idea-btn" id="addIdeaBtn">记录灵感 💡</button>
           </div>
         </div>
@@ -277,7 +287,16 @@
         <div class="idea-edit-tags-row">
           <span>标签：</span>
           <div class="idea-edit-tags" id="ideaEditTags"></div>
-          <input type="text" id="ideaEditTagInput" placeholder="添加标签回车" maxlength="10" class="idea-edit-tag-input">
+          <div class="idea-tag-picker-wrap">
+            <button type="button" class="idea-tag-picker-btn" id="ideaEditTagPickerBtn">+ 添加标签</button>
+            <div class="idea-tag-picker-dropdown" id="ideaEditTagPickerDropdown">
+              <div class="idea-tag-picker-list" id="ideaEditTagPickerList"></div>
+              <div class="idea-tag-picker-create">
+                <input type="text" id="ideaEditTagInput" placeholder="新建标签..." maxlength="10">
+                <button type="button" id="ideaEditTagCreateBtn">创建</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="idea-edit-status-row">
           <span>状态：</span>
@@ -298,37 +317,6 @@
     <!-- ==================== 总结统计模块 ==================== -->
     <section class="tab-content" id="summarySection">
       <div class="summary-layout">
-        <!-- 顶部统计卡片 -->
-        <div class="stats-row">
-          <div class="stat-card card">
-            <div class="stat-icon">✅</div>
-            <div class="stat-info">
-              <span class="stat-value" id="statCompleted">0</span>
-              <span class="stat-label">已完成</span>
-            </div>
-          </div>
-          <div class="stat-card card">
-            <div class="stat-icon">📋</div>
-            <div class="stat-info">
-              <span class="stat-value" id="statTotal">0</span>
-              <span class="stat-label">总任务</span>
-            </div>
-          </div>
-          <div class="stat-card card">
-            <div class="stat-icon">📈</div>
-            <div class="stat-info">
-              <span class="stat-value" id="statRate">0%</span>
-              <span class="stat-label">完成率</span>
-            </div>
-          </div>
-          <div class="stat-card card">
-            <div class="stat-icon">🔥</div>
-            <div class="stat-info">
-              <span class="stat-value" id="statStreak">0</span>
-              <span class="stat-label">连续天数</span>
-            </div>
-          </div>
-        </div>
 
         <!-- 周总结/月总结切换 -->
         <div class="summary-mode-toggle card">
@@ -388,15 +376,6 @@
           </div>
         </div>
 
-        <!-- 趋势图 -->
-        <div class="summary-toggle card">
-          <button class="summary-tab active" data-range="week">本周</button>
-          <button class="summary-tab" data-range="month">本月</button>
-        </div>
-        <div class="chart-card card">
-          <h3>每日完成趋势</h3>
-          <canvas id="barChart" height="220"></canvas>
-        </div>
       </div>
     </section>
 
