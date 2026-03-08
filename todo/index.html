@@ -202,8 +202,32 @@
     <!-- ==================== 灵感记录模块 ==================== -->
     <section class="tab-content" id="ideasSection">
       <div class="ideas-layout">
+        <!-- 灵感统计条 -->
+        <div class="idea-stats-bar card">
+          <div class="idea-stat-item">
+            <span class="idea-stat-num" id="ideaStatTotal">0</span>
+            <span class="idea-stat-label">全部</span>
+          </div>
+          <div class="idea-stat-item">
+            <span class="idea-stat-num idea-stat-pending" id="ideaStatPending">0</span>
+            <span class="idea-stat-label">待处理</span>
+          </div>
+          <div class="idea-stat-item">
+            <span class="idea-stat-num idea-stat-doing" id="ideaStatDoing">0</span>
+            <span class="idea-stat-label">进行中</span>
+          </div>
+          <div class="idea-stat-item">
+            <span class="idea-stat-num idea-stat-done" id="ideaStatDone">0</span>
+            <span class="idea-stat-label">已实现</span>
+          </div>
+          <div class="idea-stat-item">
+            <span class="idea-stat-num idea-stat-archived" id="ideaStatArchived">0</span>
+            <span class="idea-stat-label">已归档</span>
+          </div>
+        </div>
+
         <div class="add-idea-form card">
-          <textarea id="ideaInput" placeholder="记录你突然冒出来的灵感..." maxlength="500" rows="3"></textarea>
+          <textarea id="ideaInput" placeholder="记录你突然冒出来的灵感、想法或粘贴一个链接..." maxlength="500" rows="3"></textarea>
           <div class="idea-form-bottom">
             <div class="idea-tags-input">
               <input type="text" id="ideaTagInput" placeholder="添加标签后回车" maxlength="10">
@@ -212,27 +236,102 @@
             <button class="add-idea-btn" id="addIdeaBtn">记录灵感 💡</button>
           </div>
         </div>
-        <div class="idea-filter-tags card">
-          <span class="filter-label">标签筛选：</span>
-          <div class="idea-all-tags" id="ideaAllTags">
-            <span class="idea-tag-filter active" data-tag="all">全部</span>
+
+        <!-- 搜索 + 筛选 + 排序 -->
+        <div class="idea-toolbar">
+          <div class="idea-search-wrap">
+            <input type="text" id="ideaSearchInput" placeholder="搜索灵感..." class="idea-search-input">
+          </div>
+          <div class="idea-filter-tags card">
+            <span class="filter-label">标签筛选：</span>
+            <div class="idea-all-tags" id="ideaAllTags">
+              <span class="idea-tag-filter active" data-tag="all">全部</span>
+            </div>
+          </div>
+          <div class="idea-toolbar-right">
+            <select id="ideaStatusFilter" class="idea-status-filter">
+              <option value="all">全部状态</option>
+              <option value="pending">待处理</option>
+              <option value="doing">进行中</option>
+              <option value="done">已实现</option>
+              <option value="archived">已归档</option>
+            </select>
+            <select id="ideaSortSelect" class="idea-sort-select">
+              <option value="newest">最新优先</option>
+              <option value="oldest">最早优先</option>
+            </select>
           </div>
         </div>
-        <div class="idea-sort">
-          <select id="ideaSortSelect">
-            <option value="newest">最新优先</option>
-            <option value="oldest">最早优先</option>
-          </select>
-        </div>
+
         <div class="ideas-list" id="ideasList">
           <p class="empty-tip">还没有灵感记录，有想法就快写下来吧~</p>
         </div>
       </div>
     </section>
 
+    <!-- 灵感编辑弹窗 -->
+    <div class="edit-overlay" id="ideaEditOverlay" style="display:none;">
+      <div class="edit-card idea-edit-card">
+        <h3>编辑灵感</h3>
+        <textarea id="ideaEditText" placeholder="灵感内容" maxlength="500" rows="3"></textarea>
+        <div class="idea-edit-tags-row">
+          <span>标签：</span>
+          <div class="idea-edit-tags" id="ideaEditTags"></div>
+          <input type="text" id="ideaEditTagInput" placeholder="添加标签回车" maxlength="10" class="idea-edit-tag-input">
+        </div>
+        <div class="idea-edit-status-row">
+          <span>状态：</span>
+          <select id="ideaEditStatus" class="idea-edit-status-select">
+            <option value="pending">待处理</option>
+            <option value="doing">进行中</option>
+            <option value="done">已实现</option>
+            <option value="archived">已归档</option>
+          </select>
+        </div>
+        <div class="edit-actions">
+          <button class="edit-cancel-btn" id="ideaEditCancelBtn">取消</button>
+          <button class="edit-save-btn" id="ideaEditSaveBtn">保存</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ==================== 总结统计模块 ==================== -->
     <section class="tab-content" id="summarySection">
       <div class="summary-layout">
+        <!-- 周报卡片 -->
+        <div class="weekly-report-card card" id="weeklyReportCard">
+          <div class="report-header">
+            <h3 id="reportTitle">📋 本周周报</h3>
+            <div class="report-nav">
+              <button class="report-nav-btn" id="reportPrevWeek" title="上一周">‹</button>
+              <span class="report-week-label" id="reportWeekLabel">本周</span>
+              <button class="report-nav-btn" id="reportNextWeek" title="下一周">›</button>
+            </div>
+          </div>
+          <div class="report-motivation" id="reportMotivation"></div>
+          <div class="report-body">
+            <div class="report-section">
+              <div class="report-section-title">✅ 已完成</div>
+              <div class="report-list" id="reportCompleted"><span class="report-empty">暂无</span></div>
+            </div>
+            <div class="report-section">
+              <div class="report-section-title">📅 日程回顾</div>
+              <div class="report-list" id="reportSchedules"><span class="report-empty">暂无</span></div>
+            </div>
+            <div class="report-section">
+              <div class="report-section-title">⏳ 未完成 / 顺延</div>
+              <div class="report-list" id="reportUndone"><span class="report-empty">暂无</span></div>
+            </div>
+          </div>
+          <div class="report-summary-stats">
+            <span class="report-stat">完成 <strong id="reportDoneCount">0</strong> 项</span>
+            <span class="report-stat-sep">·</span>
+            <span class="report-stat">总计 <strong id="reportTotalCount">0</strong> 项</span>
+            <span class="report-stat-sep">·</span>
+            <span class="report-stat">完成率 <strong id="reportRateValue">0%</strong></span>
+          </div>
+        </div>
+
         <div class="stats-row">
           <div class="stat-card card">
             <div class="stat-icon">✅</div>

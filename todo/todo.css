@@ -2076,6 +2076,381 @@ body::after {
   pointer-events: none;
 }
 
+/* ========== 灵感统计条 ========== */
+.idea-stats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 14px 20px;
+  gap: 8px;
+}
+
+.idea-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.idea-stat-num {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.idea-stat-pending { color: var(--primary); }
+.idea-stat-doing { color: #4A90D9; }
+.idea-stat-done { color: var(--success); }
+.idea-stat-archived { color: var(--text-lighter); }
+
+.idea-stat-label {
+  font-size: 0.72rem;
+  color: var(--text-light);
+}
+
+/* ========== 灵感搜索/工具栏 ========== */
+.idea-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.idea-search-wrap {
+  width: 100%;
+}
+
+.idea-search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--text);
+  transition: border-color 0.3s;
+}
+
+.idea-search-input:focus { border-color: var(--primary); }
+
+.idea-toolbar-right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.idea-status-filter,
+.idea-sort-select {
+  padding: 6px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  outline: none;
+  background: var(--card-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* ========== 灵感卡片状态标记 ========== */
+.idea-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.idea-status-badge.s-pending { background: rgba(255, 140, 66, 0.12); color: var(--primary-dark); }
+.idea-status-badge.s-doing { background: rgba(74, 144, 217, 0.12); color: #2e6db4; }
+.idea-status-badge.s-done { background: rgba(107, 203, 119, 0.15); color: #2d8a3e; }
+.idea-status-badge.s-archived { background: rgba(160, 139, 122, 0.12); color: var(--text-lighter); }
+
+.idea-card.status-archived {
+  opacity: 0.6;
+}
+
+.idea-card.status-done .idea-content {
+  text-decoration: line-through;
+  color: var(--text-lighter);
+}
+
+/* 灵感卡片头部 */
+.idea-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* 灵感卡片内链接 */
+.idea-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.82rem;
+  word-break: break-all;
+  margin-top: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 140, 66, 0.06);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 140, 66, 0.25);
+  transition: all 0.2s;
+}
+
+.idea-link:hover {
+  background: rgba(255, 140, 66, 0.12);
+  border-color: var(--primary);
+}
+
+/* 灵感编辑弹窗 */
+.idea-edit-card textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 70px;
+  margin-bottom: 14px;
+}
+
+.idea-edit-card textarea:focus { border-color: var(--primary); }
+
+.idea-edit-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.idea-edit-tags-row > span {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.idea-edit-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.idea-edit-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  background: linear-gradient(135deg, rgba(255, 140, 66, 0.12), rgba(255, 209, 102, 0.15));
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: var(--primary-dark);
+}
+
+.idea-edit-tag button {
+  background: none;
+  border: none;
+  color: var(--primary-dark);
+  cursor: pointer;
+  font-size: 0.68rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.idea-edit-tag-input {
+  padding: 5px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  outline: none;
+  background: var(--input-bg);
+  color: var(--text);
+  width: 110px;
+}
+
+.idea-edit-tag-input:focus { border-color: var(--primary); }
+
+.idea-edit-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.idea-edit-status-row > span {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.idea-edit-status-select {
+  padding: 6px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.idea-edit-status-select:focus { border-color: var(--primary); }
+
+/* ========== 周报卡片 ========== */
+.weekly-report-card {
+  padding: 28px;
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.report-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.report-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-nav-btn {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-light);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.report-nav-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.report-week-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 110px;
+  text-align: center;
+}
+
+.report-motivation {
+  padding: 12px 18px;
+  background: linear-gradient(135deg, rgba(255, 140, 66, 0.08), rgba(255, 209, 102, 0.08));
+  border-radius: 12px;
+  font-size: 0.92rem;
+  color: var(--primary-dark);
+  font-weight: 600;
+  margin-bottom: 16px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.report-body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.report-section {
+  min-width: 0;
+}
+
+.report-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--border);
+}
+
+.report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.report-list-item {
+  font-size: 0.82rem;
+  color: var(--text);
+  padding: 4px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.report-list-item::before {
+  content: '•';
+  color: var(--primary);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.report-list-item.schedule-item::before {
+  content: '📅';
+}
+
+.report-list-item.undone-item {
+  color: var(--text-light);
+}
+
+.report-list-item.undone-item::before {
+  content: '○';
+  color: var(--danger);
+}
+
+.report-empty {
+  font-size: 0.8rem;
+  color: var(--text-lighter);
+  padding: 8px 0;
+}
+
+.report-summary-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+.report-stat strong {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.report-stat-sep {
+  color: var(--text-lighter);
+}
+
 /* ========== 灵感记录模块 ========== */
 .ideas-layout {
   display: flex;
@@ -2202,19 +2577,6 @@ body::after {
   border-color: var(--primary);
 }
 
-.idea-sort { display: flex; justify-content: flex-end; }
-
-.idea-sort select {
-  padding: 6px 12px;
-  border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  outline: none;
-  background: var(--card-bg);
-  color: var(--text);
-  cursor: pointer;
-}
-
 .ideas-list { display: flex; flex-direction: column; gap: 12px; }
 
 .idea-card {
@@ -2300,6 +2662,9 @@ body::after {
   .todo-options { flex-wrap: wrap; }
   .todo-input-row { flex-direction: column; }
   .idea-form-bottom { flex-direction: column; align-items: stretch; }
+  .report-body { grid-template-columns: 1fr; }
+  .idea-stats-bar { flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .idea-toolbar-right { flex-wrap: wrap; }
   .theme-options { grid-template-columns: repeat(2, 1fr); }
   .water-reminder { top: 10px; left: 12px; }
 }

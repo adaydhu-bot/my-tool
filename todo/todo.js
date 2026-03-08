@@ -15,9 +15,14 @@ let selectedDate = new Date();
 let calYear, calMonth;
 let currentFilter = 'all';
 let currentSummaryRange = 'week';
+let reportWeekOffset = 0; // 0=本周, -1=上周, etc.
 let currentIdeaTag = 'all';
 let currentIdeaSort = 'newest';
+let currentIdeaStatus = 'all';
+let currentIdeaSearch = '';
 let newIdeaTags = [];
+let editingIdeaId = null;
+let editingIdeaTags = [];
 let currentUser = null;
 let editingTodoId = null;
 let editingTodoDate = null;
@@ -778,6 +783,7 @@ async function loadIdeasFromCloud() {
         id: item.id,
         text: item.text,
         tags: item.tags || [],
+        status: item.status || 'pending',
         createdAt: item.created_at
       }));
     }
@@ -884,7 +890,7 @@ async function restoreFromLocalBackup() {
           8000
         );
         if (!error && data) {
-          ideas.push({ id: data.id, text: data.text, tags: data.tags || [], createdAt: data.created_at });
+          ideas.push({ id: data.id, text: data.text, tags: data.tags || [], status: item.status || 'pending', createdAt: data.created_at });
         }
       } catch (e) {
         ideas.push({ ...item, id: item.id || tempId() });
@@ -2296,6 +2302,121 @@ function renderHeatmap() {
   container.innerHTML = html;
 }
 
+// ========== 周报功能 ==========
+function getWeekDateRange(offset) {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const startOfThisWeek = new Date(today);
+  startOfThisWeek.setDate(today.getDate() - dayOfWeek + offset * 7);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfThisWeek);
+    d.setDate(startOfThisWeek.getDate() + i);
+    dates.push(dateKey(d));
+  }
+  return dates;
+}
+
+function getMotivationText(rate, doneCount, totalCount) {
+  if (totalCount === 0) return '🌱 这周还没有任务记录，开始新的一周吧！';
+  if (rate === 100) return '🏆 完美！全部任务都完成了，你太厉害了！给自己一个大大的赞！';
+  if (rate >= 80) return '🌟 表现超棒！完成率很高，继续保持这份节奏！';
+  if (rate >= 60) return '💪 做得不错！超过半数任务完成了，再加把劲！';
+  if (rate >= 40) return '🚀 还有提升空间！把未完成的任务拆小一些，一步步来。';
+  if (rate >= 20) return '🔥 虽然完成率不高，但你已经在行动了，坚持就是胜利！';
+  return '💡 这周似乎有点忙。别焦虑，专注最重要的那一件事就好。';
+}
+
+function renderWeeklyReport() {
+  const dates = getWeekDateRange(reportWeekOffset);
+
+  // 更新周标签
+  const weekLabel = document.getElementById('reportWeekLabel');
+  if (weekLabel) {
+    if (reportWeekOffset === 0) {
+      weekLabel.textContent = '本周';
+    } else if (reportWeekOffset === -1) {
+      weekLabel.textContent = '上周';
+    } else {
+      const start = dates[0].split('-');
+      const end = dates[6].split('-');
+      weekLabel.textContent = `${+start[1]}/${+start[2]} - ${+end[1]}/${+end[2]}`;
+    }
+  }
+
+  // 收集数据
+  const completedItems = [];
+  const scheduleItems = [];
+  const undoneItems = [];
+  let totalCount = 0;
+  let doneCount = 0;
+
+  dates.forEach(dk => {
+    const items = getTodosForDate(dk);
+    const parts = dk.split('-');
+    const dayLabel = `${+parts[1]}/${+parts[2]}`;
+
+    items.forEach(item => {
+      totalCount++;
+      if (item.done) {
+        doneCount++;
+        if (item.time) {
+          scheduleItems.push({ text: item.time ? stripTimeFromText(item.text) : item.text, day: dayLabel, time: item.time });
+        } else {
+          completedItems.push({ text: item.text, day: dayLabel });
+        }
+      } else {
+        if (item.time) {
+          scheduleItems.push({ text: item.time ? stripTimeFromText(item.text) : item.text, day: dayLabel, time: item.time });
+        } else {
+          undoneItems.push({ text: item.text, day: dayLabel });
+        }
+      }
+    });
+  });
+
+  const rate = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
+
+  // 激励文案
+  const motivEl = document.getElementById('reportMotivation');
+  if (motivEl) motivEl.textContent = getMotivationText(rate, doneCount, totalCount);
+
+  // 已完成列表
+  const completedEl = document.getElementById('reportCompleted');
+  if (completedEl) {
+    completedEl.innerHTML = completedItems.length > 0
+      ? completedItems.map(i => `<div class="report-list-item"><span>${escapeHtml(i.text)}</span><small style="color:var(--text-lighter);margin-left:auto;white-space:nowrap;">${i.day}</small></div>`).join('')
+      : '<span class="report-empty">暂无</span>';
+  }
+
+  // 日程列表
+  const schedEl = document.getElementById('reportSchedules');
+  if (schedEl) {
+    schedEl.innerHTML = scheduleItems.length > 0
+      ? scheduleItems.map(i => `<div class="report-list-item schedule-item"><span>${i.time ? i.time + ' ' : ''}${escapeHtml(i.text)}</span><small style="color:var(--text-lighter);margin-left:auto;white-space:nowrap;">${i.day}</small></div>`).join('')
+      : '<span class="report-empty">暂无</span>';
+  }
+
+  // 未完成列表
+  const undoneEl = document.getElementById('reportUndone');
+  if (undoneEl) {
+    undoneEl.innerHTML = undoneItems.length > 0
+      ? undoneItems.map(i => `<div class="report-list-item undone-item"><span>${escapeHtml(i.text)}</span><small style="color:var(--text-lighter);margin-left:auto;white-space:nowrap;">${i.day}</small></div>`).join('')
+      : '<span class="report-empty">全部完成！太棒了 🎉</span>';
+  }
+
+  // 底部统计
+  const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  el('reportDoneCount', doneCount);
+  el('reportTotalCount', totalCount);
+  el('reportRateValue', rate + '%');
+}
+
+function renderSummaryFull() {
+  renderSummary();
+  renderWeeklyReport();
+}
+
 // ================================================================
 // 模块三：灵感记录
 // ================================================================
@@ -2326,34 +2447,92 @@ function renderIdeaFilterTags() {
   });
 }
 
+// 灵感统计更新
+function updateIdeaStats() {
+  const total = ideas.length;
+  const pending = ideas.filter(i => !i.status || i.status === 'pending').length;
+  const doing = ideas.filter(i => i.status === 'doing').length;
+  const done = ideas.filter(i => i.status === 'done').length;
+  const archived = ideas.filter(i => i.status === 'archived').length;
+
+  const el = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  el('ideaStatTotal', total);
+  el('ideaStatPending', pending);
+  el('ideaStatDoing', doing);
+  el('ideaStatDone', done);
+  el('ideaStatArchived', archived);
+}
+
+// 从文本中提取 URL
+function extractUrls(text) {
+  const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/gi;
+  return text.match(urlRegex) || [];
+}
+
+// 渲染灵感内容（将URL转为可点击链接）
+function renderIdeaContent(text) {
+  const urls = extractUrls(text);
+  let html = escapeHtml(text);
+  // 将内容中的URL替换为链接（在转义后的内容中查找转义后的URL）
+  urls.forEach(url => {
+    const escaped = escapeHtml(url);
+    const shortUrl = url.length > 50 ? url.slice(0, 50) + '...' : url;
+    html = html.replace(escaped, `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="idea-link" onclick="event.stopPropagation()">🔗 ${escapeHtml(shortUrl)}</a>`);
+  });
+  return html;
+}
+
 function renderIdeasList() {
   const listEl = document.getElementById('ideasList');
   let filtered = [...ideas];
 
+  // 搜索过滤
+  if (currentIdeaSearch) {
+    const kw = currentIdeaSearch.toLowerCase();
+    filtered = filtered.filter(idea => idea.text.toLowerCase().includes(kw) || idea.tags.some(t => t.toLowerCase().includes(kw)));
+  }
+
+  // 标签过滤
   if (currentIdeaTag !== 'all') {
     filtered = filtered.filter(idea => idea.tags.includes(currentIdeaTag));
   }
 
+  // 状态过滤
+  if (currentIdeaStatus !== 'all') {
+    filtered = filtered.filter(idea => (idea.status || 'pending') === currentIdeaStatus);
+  }
+
+  // 排序
   if (currentIdeaSort === 'newest') {
     filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   } else {
     filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   }
 
+  updateIdeaStats();
+
   if (filtered.length === 0) {
-    listEl.innerHTML = '<p class="empty-tip">还没有灵感记录，有想法就快写下来吧~</p>';
+    const msg = currentIdeaSearch ? '没有找到匹配的灵感' : '还没有灵感记录，有想法就快写下来吧~';
+    listEl.innerHTML = `<p class="empty-tip">${msg}</p>`;
     return;
   }
+
+  const statusLabels = { pending: '待处理', doing: '进行中', done: '已实现', archived: '已归档' };
 
   listEl.innerHTML = filtered.map(idea => {
     const d = new Date(idea.createdAt);
     const timeStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const tagsHtml = idea.tags.map(t => `<span class="idea-tag">${escapeHtml(t)}</span>`).join('');
+    const status = idea.status || 'pending';
+    const statusBadge = `<span class="idea-status-badge s-${status}">${statusLabels[status]}</span>`;
 
     return `
-      <div class="idea-card">
+      <div class="idea-card status-${status}" data-id="${idea.id}">
         <button class="idea-delete" data-id="${idea.id}" title="删除">✕</button>
-        <div class="idea-content">${escapeHtml(idea.text)}</div>
+        <div class="idea-card-header">
+          ${statusBadge}
+        </div>
+        <div class="idea-content">${renderIdeaContent(idea.text)}</div>
         <div class="idea-bottom">
           <div class="idea-tags">${tagsHtml}</div>
           <span class="idea-time">${timeStr}</span>
@@ -2362,15 +2541,23 @@ function renderIdeasList() {
     `;
   }).join('');
 
+  // 点击卡片编辑
+  listEl.querySelectorAll('.idea-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.idea-delete') || e.target.closest('.idea-link')) return;
+      openIdeaEditDialog(card.dataset.id);
+    });
+  });
+
   listEl.querySelectorAll('.idea-delete').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const deleteId = btn.dataset.id;
       const ideaIndex = ideas.findIndex(i => i.id === deleteId);
       if (ideaIndex === -1) return;
 
       const deletedIdea = ideas[ideaIndex];
 
-      // 立即从 UI 移除
       ideas.splice(ideaIndex, 1);
       backupIdeasToLocal();
       renderIdeasList();
@@ -2380,14 +2567,12 @@ function renderIdeasList() {
 
       showUndoToast(
         `已删除灵感「${displayText}」`,
-        // 撤销
         () => {
           ideas.splice(ideaIndex, 0, deletedIdea);
           backupIdeasToLocal();
           renderIdeasList();
           renderIdeaFilterTags();
         },
-        // 确认删除
         () => {
           if (!deleteId.startsWith('local_')) {
             withTimeout(_supaClient.from('ideas').delete().eq('id', deleteId), 8000)
@@ -2397,6 +2582,75 @@ function renderIdeasList() {
       );
     });
   });
+}
+
+// ========== 灵感编辑弹窗 ==========
+function openIdeaEditDialog(id) {
+  const idea = ideas.find(i => i.id === id);
+  if (!idea) return;
+
+  editingIdeaId = id;
+  editingIdeaTags = [...(idea.tags || [])];
+
+  document.getElementById('ideaEditText').value = idea.text;
+  document.getElementById('ideaEditStatus').value = idea.status || 'pending';
+  renderIdeaEditTags();
+
+  const overlay = document.getElementById('ideaEditOverlay');
+  overlay.style.display = 'flex';
+  overlay.classList.add('show');
+  document.getElementById('ideaEditText').focus();
+}
+
+function closeIdeaEditDialog() {
+  const overlay = document.getElementById('ideaEditOverlay');
+  overlay.classList.remove('show');
+  overlay.style.display = 'none';
+  editingIdeaId = null;
+  editingIdeaTags = [];
+}
+
+function renderIdeaEditTags() {
+  const container = document.getElementById('ideaEditTags');
+  container.innerHTML = editingIdeaTags.map((tag, i) => `
+    <span class="idea-edit-tag">${escapeHtml(tag)} <button data-index="${i}">✕</button></span>
+  `).join('');
+
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingIdeaTags.splice(+btn.dataset.index, 1);
+      renderIdeaEditTags();
+    });
+  });
+}
+
+function saveIdeaEdit() {
+  if (!editingIdeaId) return;
+
+  const text = document.getElementById('ideaEditText').value.trim();
+  if (!text) return;
+
+  const status = document.getElementById('ideaEditStatus').value;
+  const idea = ideas.find(i => i.id === editingIdeaId);
+  if (!idea) return;
+
+  idea.text = text;
+  idea.tags = [...editingIdeaTags];
+  idea.status = status;
+
+  // 云端同步
+  if (!editingIdeaId.startsWith('local_')) {
+    withTimeout(
+      _supaClient.from('ideas').update({ text, tags: idea.tags, status }).eq('id', editingIdeaId),
+      8000
+    ).catch(e => console.warn('编辑灵感同步失败:', e));
+  }
+
+  backupIdeasToLocal();
+  renderIdeasList();
+  renderIdeaFilterTags();
+  closeIdeaEditDialog();
 }
 
 function renderNewIdeaTags() {
@@ -2445,6 +2699,7 @@ async function addIdea() {
         id: data.id,
         text: data.text,
         tags: data.tags || [],
+        status: 'pending',
         createdAt: data.created_at
       });
     }
@@ -2470,6 +2725,7 @@ function addIdeaLocally(text, tags) {
     id: localId,
     text,
     tags,
+    status: 'pending',
     createdAt: new Date().toISOString()
   });
   pendingSyncs.push({ type: 'add_idea', localId, text, tags });
@@ -2742,6 +2998,7 @@ function initApp() {
   updateProgressBar();
   renderIdeaFilterTags();
   renderIdeasList();
+  updateIdeaStats();
 }
 
 // ================================================================
@@ -2761,7 +3018,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const csb = document.getElementById('cornerSettingsBtn');
       if (csb) csb.classList.remove('settings-active');
 
-      if (btn.dataset.tab === 'summary') renderSummary();
+      if (btn.dataset.tab === 'summary') renderSummaryFull();
     });
   });
 
@@ -3049,7 +3306,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.summary-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentSummaryRange = btn.dataset.range;
-      renderSummary();
+      renderSummaryFull();
     });
   });
 
@@ -3072,6 +3329,68 @@ document.addEventListener('DOMContentLoaded', () => {
     currentIdeaSort = e.target.value;
     renderIdeasList();
   });
+
+  // 灵感搜索
+  const ideaSearchInput = document.getElementById('ideaSearchInput');
+  if (ideaSearchInput) {
+    ideaSearchInput.addEventListener('input', () => {
+      currentIdeaSearch = ideaSearchInput.value.trim();
+      renderIdeasList();
+    });
+  }
+
+  // 灵感状态筛选
+  const ideaStatusFilter = document.getElementById('ideaStatusFilter');
+  if (ideaStatusFilter) {
+    ideaStatusFilter.addEventListener('change', () => {
+      currentIdeaStatus = ideaStatusFilter.value;
+      renderIdeasList();
+    });
+  }
+
+  // 灵感编辑弹窗
+  const ideaEditCancelBtn = document.getElementById('ideaEditCancelBtn');
+  const ideaEditSaveBtn = document.getElementById('ideaEditSaveBtn');
+  const ideaEditOverlay = document.getElementById('ideaEditOverlay');
+  const ideaEditTagInput = document.getElementById('ideaEditTagInput');
+
+  if (ideaEditCancelBtn) ideaEditCancelBtn.addEventListener('click', closeIdeaEditDialog);
+  if (ideaEditSaveBtn) ideaEditSaveBtn.addEventListener('click', saveIdeaEdit);
+  if (ideaEditOverlay) {
+    ideaEditOverlay.addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeIdeaEditDialog();
+    });
+  }
+  if (ideaEditTagInput) {
+    ideaEditTagInput.addEventListener('keypress', e => {
+      if (e.key === 'Enter') {
+        const tag = ideaEditTagInput.value.trim();
+        if (tag && !editingIdeaTags.includes(tag) && editingIdeaTags.length < 5) {
+          editingIdeaTags.push(tag);
+          renderIdeaEditTags();
+        }
+        ideaEditTagInput.value = '';
+      }
+    });
+  }
+
+  // 周报导航
+  const reportPrevWeek = document.getElementById('reportPrevWeek');
+  const reportNextWeek = document.getElementById('reportNextWeek');
+  if (reportPrevWeek) {
+    reportPrevWeek.addEventListener('click', () => {
+      reportWeekOffset--;
+      renderWeeklyReport();
+    });
+  }
+  if (reportNextWeek) {
+    reportNextWeek.addEventListener('click', () => {
+      if (reportWeekOffset < 0) {
+        reportWeekOffset++;
+        renderWeeklyReport();
+      }
+    });
+  }
 
   // 主题切换
   document.querySelectorAll('#themeOptions .theme-btn').forEach(btn => {
@@ -3129,7 +3448,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 窗口大小变化时重绘图表
   window.addEventListener('resize', () => {
     if (document.getElementById('summarySection').classList.contains('active')) {
-      renderSummary();
+      renderSummaryFull();
     }
   });
 
