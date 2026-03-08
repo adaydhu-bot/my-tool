@@ -299,6 +299,11 @@ async function carryOverUnfinishedTodos() {
     });
   });
 
+  // 收集所有重复任务模板的文本，避免repeat信息丢失后被误顺延
+  const repeatTexts = new Set();
+  const templates = collectRepeatTemplates();
+  Object.values(templates).forEach(t => repeatTexts.add(t.text));
+
   const tasksToCarry = [];
 
   for (let i = 1; i <= 7; i++) {
@@ -308,6 +313,7 @@ async function carryOverUnfinishedTodos() {
     const items = todos[key] || [];
     items.forEach(item => {
       if (!item.done && !item.repeat
+        && !repeatTexts.has(item.text)
         && !existingTexts.has(item.text)
         && !allCompletedTexts.has(item.text)) {
         tasksToCarry.push({ ...item, originalDate: key });
@@ -741,9 +747,9 @@ async function loadTodosFromCloud() {
           const localItem = localItemById || localItemByText;
           if (localItem) {
             item.subtasks = localItem.subtasks || [];
-            // repeat 字段仅在 id 精确匹配时恢复，避免跨记录误赋值
-            if (localItemById) {
-              item.repeat = localItem.repeat || null;
+            // repeat 字段从本地备份恢复（id匹配优先，text匹配兜底）
+            if (localItem.repeat) {
+              item.repeat = localItem.repeat;
             }
             item.time = localItem.time || item.time || null;
             item.endTime = localItem.endTime || item.endTime || null;
@@ -2105,91 +2111,7 @@ function computeStats(range) {
 }
 
 function renderSummary() {
-  const stats = computeStats(currentSummaryRange);
-
-  document.getElementById('statCompleted').textContent = stats.completedTasks;
-  document.getElementById('statTotal').textContent = stats.totalTasks;
-  document.getElementById('statRate').textContent = stats.rate + '%';
-  document.getElementById('statStreak').textContent = stats.streak;
-
-  drawBarChart(stats.dailyLabels, stats.dailyCounts);
-}
-
-function drawBarChart(labels, data) {
-  const canvas = document.getElementById('barChart');
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = 220 * dpr;
-  ctx.scale(dpr, dpr);
-
-  const W = rect.width;
-  const H = 220;
-  const padding = { top: 10, right: 20, bottom: 40, left: 36 };
-  const chartW = W - padding.left - padding.right;
-  const chartH = H - padding.top - padding.bottom;
-
-  ctx.clearRect(0, 0, W, H);
-  const maxVal = Math.max(...data, 1);
-
-  const style = getComputedStyle(document.documentElement);
-  const borderColor = style.getPropertyValue('--border').trim() || '#F0E6DD';
-  const textLight = style.getPropertyValue('--text-light').trim() || '#A08B7A';
-  const primary = style.getPropertyValue('--primary').trim() || '#FF8C42';
-  const secondary = style.getPropertyValue('--secondary').trim() || '#FFD166';
-
-  ctx.strokeStyle = borderColor;
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = padding.top + chartH - (chartH / 4) * i;
-    ctx.beginPath();
-    ctx.moveTo(padding.left, y);
-    ctx.lineTo(W - padding.right, y);
-    ctx.stroke();
-
-    ctx.fillStyle = textLight;
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(Math.round(maxVal / 4 * i), padding.left - 6, y);
-  }
-
-  const barCount = data.length;
-  const barGap = 4;
-  const totalGap = barGap * (barCount + 1);
-  const barWidth = Math.min((chartW - totalGap) / barCount, 40);
-  const startX = padding.left + (chartW - (barWidth + barGap) * barCount) / 2;
-
-  data.forEach((val, i) => {
-    const x = startX + (barWidth + barGap) * i + barGap;
-    const barH = (val / maxVal) * chartH;
-    const y = padding.top + chartH - barH;
-
-    const grad = ctx.createLinearGradient(0, y, 0, padding.top + chartH);
-    grad.addColorStop(0, primary);
-    grad.addColorStop(1, secondary);
-    ctx.fillStyle = grad;
-
-    const r = Math.min(4, barWidth / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + barWidth - r, y);
-    ctx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + r);
-    ctx.lineTo(x + barWidth, padding.top + chartH);
-    ctx.lineTo(x, padding.top + chartH);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.fill();
-
-    ctx.fillStyle = textLight;
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    if (barCount <= 10 || i % Math.ceil(barCount / 10) === 0) {
-      ctx.fillText(labels[i], x + barWidth / 2, padding.top + chartH + 6);
-    }
-  });
+  // 顶部统计卡片和趋势图已移除，保留函数签名以防其他地方调用
 }
 
 // ========== 周报 & 月总结 ==========
@@ -2610,13 +2532,15 @@ function renderIdeasList() {
     return `
       <div class="idea-card status-${status}" data-id="${idea.id}">
         <button class="idea-delete" data-id="${idea.id}" title="删除">✕</button>
-        <div class="idea-card-header">
-          ${statusBadge}
-        </div>
-        <div class="idea-content">${renderIdeaContent(idea.text)}</div>
-        <div class="idea-bottom">
-          <div class="idea-tags">${tagsHtml}</div>
-          <span class="idea-time">${timeStr}</span>
+        <div class="idea-card-row">
+          <div class="idea-card-left">
+            ${tagsHtml ? `<div class="idea-tags">${tagsHtml}</div>` : ''}
+            <div class="idea-content">${renderIdeaContent(idea.text)}</div>
+          </div>
+          <div class="idea-card-right">
+            ${statusBadge}
+            <span class="idea-time">${timeStr}</span>
+          </div>
         </div>
       </div>
     `;
@@ -2702,8 +2626,56 @@ function renderIdeaEditTags() {
       e.stopPropagation();
       editingIdeaTags.splice(+btn.dataset.index, 1);
       renderIdeaEditTags();
+      renderIdeaEditTagPickerList();
     });
   });
+}
+
+function renderIdeaEditTagPickerList() {
+  const listEl = document.getElementById('ideaEditTagPickerList');
+  if (!listEl) return;
+  const allTags = getAllIdeaTags();
+  listEl.innerHTML = allTags.map(tag => {
+    const isSelected = editingIdeaTags.includes(tag);
+    return `<span class="idea-tag-picker-item${isSelected ? ' selected' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`;
+  }).join('');
+
+  listEl.querySelectorAll('.idea-tag-picker-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tag = item.dataset.tag;
+      if (editingIdeaTags.includes(tag)) {
+        editingIdeaTags = editingIdeaTags.filter(t => t !== tag);
+      } else if (editingIdeaTags.length < 5) {
+        editingIdeaTags.push(tag);
+      }
+      renderIdeaEditTags();
+      // 选择后自动关闭下拉框
+      const dropdown = document.getElementById('ideaEditTagPickerDropdown');
+      if (dropdown) dropdown.classList.remove('show');
+    });
+  });
+}
+
+function toggleIdeaEditTagPicker() {
+  const dropdown = document.getElementById('ideaEditTagPickerDropdown');
+  if (dropdown.classList.contains('show')) {
+    dropdown.classList.remove('show');
+  } else {
+    renderIdeaEditTagPickerList();
+    dropdown.classList.add('show');
+  }
+}
+
+function createIdeaEditTagFromPicker() {
+  const input = document.getElementById('ideaEditTagInput');
+  const tag = input.value.trim();
+  if (tag && !editingIdeaTags.includes(tag) && editingIdeaTags.length < 5) {
+    editingIdeaTags.push(tag);
+    renderIdeaEditTags();
+    renderIdeaEditTagPickerList();
+  }
+  input.value = '';
 }
 
 function saveIdeaEdit() {
@@ -2715,6 +2687,14 @@ function saveIdeaEdit() {
   const status = document.getElementById('ideaEditStatus').value;
   const idea = ideas.find(i => i.id === editingIdeaId);
   if (!idea) return;
+
+  // 自动标签匹配：如果内容包含已有标签关键词，自动添加
+  const existingTags = getAllIdeaTags();
+  existingTags.forEach(tag => {
+    if (text.includes(tag) && !editingIdeaTags.includes(tag)) {
+      editingIdeaTags.push(tag);
+    }
+  });
 
   idea.text = text;
   idea.tags = [...editingIdeaTags];
@@ -2744,8 +2724,55 @@ function renderNewIdeaTags() {
     btn.addEventListener('click', () => {
       newIdeaTags.splice(+btn.dataset.index, 1);
       renderNewIdeaTags();
+      renderIdeaTagPickerList();
     });
   });
+}
+
+function renderIdeaTagPickerList() {
+  const listEl = document.getElementById('ideaTagPickerList');
+  if (!listEl) return;
+  const allTags = getAllIdeaTags();
+  listEl.innerHTML = allTags.map(tag => {
+    const isSelected = newIdeaTags.includes(tag);
+    return `<span class="idea-tag-picker-item${isSelected ? ' selected' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`;
+  }).join('');
+
+  listEl.querySelectorAll('.idea-tag-picker-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const tag = item.dataset.tag;
+      if (newIdeaTags.includes(tag)) {
+        newIdeaTags = newIdeaTags.filter(t => t !== tag);
+      } else if (newIdeaTags.length < 5) {
+        newIdeaTags.push(tag);
+      }
+      renderNewIdeaTags();
+      // 选择后自动关闭下拉框
+      const dropdown = document.getElementById('ideaTagPickerDropdown');
+      if (dropdown) dropdown.classList.remove('show');
+    });
+  });
+}
+
+function toggleIdeaTagPicker() {
+  const dropdown = document.getElementById('ideaTagPickerDropdown');
+  if (dropdown.classList.contains('show')) {
+    dropdown.classList.remove('show');
+  } else {
+    renderIdeaTagPickerList();
+    dropdown.classList.add('show');
+  }
+}
+
+function createIdeaTagFromPicker() {
+  const input = document.getElementById('ideaTagInput');
+  const tag = input.value.trim();
+  if (tag && !newIdeaTags.includes(tag) && newIdeaTags.length < 5) {
+    newIdeaTags.push(tag);
+    renderNewIdeaTags();
+    renderIdeaTagPickerList();
+  }
+  input.value = '';
 }
 
 let isAddingIdea = false;
@@ -2759,6 +2786,14 @@ async function addIdea() {
   const tags = [...newIdeaTags];
 
   if (!text) { input.focus(); return; }
+
+  // 自动标签匹配：如果内容包含已有标签关键词，自动添加
+  const existingTags = getAllIdeaTags();
+  existingTags.forEach(tag => {
+    if (text.includes(tag) && !tags.includes(tag)) {
+      tags.push(tag);
+    }
+  });
 
   isAddingIdea = true;
   addBtn.disabled = true;
@@ -3381,28 +3416,38 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 统计范围切换
-  document.querySelectorAll('.summary-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.summary-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentSummaryRange = btn.dataset.range;
-      renderSummaryFull();
-    });
-  });
-
   // 添加灵感
   document.getElementById('addIdeaBtn').addEventListener('click', addIdea);
 
   document.getElementById('ideaTagInput').addEventListener('keypress', e => {
     if (e.key === 'Enter') {
-      const input = e.target;
-      const tag = input.value.trim();
-      if (tag && !newIdeaTags.includes(tag) && newIdeaTags.length < 5) {
-        newIdeaTags.push(tag);
-        renderNewIdeaTags();
-      }
-      input.value = '';
+      e.preventDefault();
+      createIdeaTagFromPicker();
+    }
+  });
+
+  const ideaTagPickerBtn = document.getElementById('ideaTagPickerBtn');
+  if (ideaTagPickerBtn) {
+    ideaTagPickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleIdeaTagPicker();
+    });
+  }
+
+  const ideaTagCreateBtn = document.getElementById('ideaTagCreateBtn');
+  if (ideaTagCreateBtn) {
+    ideaTagCreateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      createIdeaTagFromPicker();
+    });
+  }
+
+  // 点击外部关闭标签选择器
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('ideaTagPickerDropdown');
+    const wrap = document.querySelector('.idea-tag-picker-wrap');
+    if (dropdown && wrap && !wrap.contains(e.target)) {
+      dropdown.classList.remove('show');
     }
   });
 
@@ -3445,15 +3490,36 @@ document.addEventListener('DOMContentLoaded', () => {
   if (ideaEditTagInput) {
     ideaEditTagInput.addEventListener('keypress', e => {
       if (e.key === 'Enter') {
-        const tag = ideaEditTagInput.value.trim();
-        if (tag && !editingIdeaTags.includes(tag) && editingIdeaTags.length < 5) {
-          editingIdeaTags.push(tag);
-          renderIdeaEditTags();
-        }
-        ideaEditTagInput.value = '';
+        e.preventDefault();
+        createIdeaEditTagFromPicker();
       }
     });
   }
+
+  const ideaEditTagPickerBtn = document.getElementById('ideaEditTagPickerBtn');
+  if (ideaEditTagPickerBtn) {
+    ideaEditTagPickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleIdeaEditTagPicker();
+    });
+  }
+
+  const ideaEditTagCreateBtn = document.getElementById('ideaEditTagCreateBtn');
+  if (ideaEditTagCreateBtn) {
+    ideaEditTagCreateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      createIdeaEditTagFromPicker();
+    });
+  }
+
+  // 点击外部关闭编辑弹窗标签选择器
+  document.addEventListener('click', (e) => {
+    const editDropdown = document.getElementById('ideaEditTagPickerDropdown');
+    const editWrap = document.querySelector('#ideaEditOverlay .idea-tag-picker-wrap');
+    if (editDropdown && editWrap && !editWrap.contains(e.target)) {
+      editDropdown.classList.remove('show');
+    }
+  });
 
   // 周报导航
   const reportPrevWeek = document.getElementById('reportPrevWeek');
