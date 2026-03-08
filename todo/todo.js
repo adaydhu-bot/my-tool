@@ -261,11 +261,13 @@ function setupAuth() {
 async function carryOverUnfinishedTodos() {
   const today = todayKey();
 
-  const todayItems = todos[today] || [];
-  // 去重：只看 text，防止同文本任务从不同天重复顺延
-  const existingTexts = new Set(todayItems.map(t => t.text));
-
-  // 从云端查询今天已存在的所有待办（含顺延），确保幂等
+  // 从云端查询今天已存在的所有待办文本（含顺延），确保幂等
+  const existingTexts = new Set();
+  
+  // 本地数据
+  (todos[today] || []).forEach(t => existingTexts.add(t.text));
+  
+  // 云端数据（覆盖本地可能的不一致）
   try {
     const { data: cloudTodayItems } = await withTimeout(
       _supaClient.from('todos').select('text')
@@ -280,9 +282,13 @@ async function carryOverUnfinishedTodos() {
     // 查询失败时继续用本地数据判断
   }
 
-  // 同时收集：今天已存在的文本（含已完成的），避免把已完成任务又顺延回来
-  // 即：如果今天已有同文本的任务（不管完成与否），都不需要顺延
-  // existingTexts 已经包含了这些
+  // 收集所有已完成的任务文本（跨所有日期），这些不需要顺延
+  const allCompletedTexts = new Set();
+  Object.keys(todos).forEach(dk => {
+    (todos[dk] || []).forEach(item => {
+      if (item.done) allCompletedTexts.add(item.text);
+    });
+  });
 
   const tasksToCarry = [];
 
@@ -292,8 +298,9 @@ async function carryOverUnfinishedTodos() {
     const key = dateKey(d);
     const items = todos[key] || [];
     items.forEach(item => {
-      if (!item.done && !item.repeat && !item.carried
-        && !existingTexts.has(item.text)) {
+      if (!item.done && !item.repeat
+        && !existingTexts.has(item.text)
+        && !allCompletedTexts.has(item.text)) {
         tasksToCarry.push({ ...item, originalDate: key });
         existingTexts.add(item.text);
       }
@@ -303,13 +310,6 @@ async function carryOverUnfinishedTodos() {
   if (tasksToCarry.length === 0) return;
 
   for (const task of tasksToCarry) {
-    // 先标记原始任务为 carried（本地），防止后续再次顺延
-    const originalItems = todos[task.originalDate] || [];
-    const originalItem = originalItems.find(t => t.text === task.text && !t.done);
-    if (originalItem) {
-      originalItem.carried = true;
-    }
-
     try {
       const { data, error } = await withTimeout(
         _supaClient.from('todos').insert({
@@ -356,6 +356,22 @@ async function carryOverUnfinishedTodos() {
         endTime: task.endTime || null,
         order: todos[today].length
       });
+    }
+
+    // 顺延后删除原始日期的这条未完成任务（云端+本地），防止下次再次顺延
+    const originalItems = todos[task.originalDate] || [];
+    const origIdx = originalItems.findIndex(t => t.text === task.text && !t.done);
+    if (origIdx !== -1) {
+      const origItem = originalItems[origIdx];
+      originalItems.splice(origIdx, 1);
+      if (origItem.id && !String(origItem.id).startsWith('local_')) {
+        try {
+          await withTimeout(
+            _supaClient.from('todos').delete().eq('id', origItem.id),
+            8000
+          );
+        } catch (e) {}
+      }
     }
   }
 }
@@ -551,6 +567,7 @@ async function loadTodosFromCloud() {
     }
 
     // 去重：同日期内同文本的任务只保留一条（保留已完成的优先，否则保留最早创建的）
+    const allDedupDeletes = [];
     Object.keys(newTodos).forEach(dk => {
       const seen = new Map();
       const deduped = [];
@@ -574,18 +591,24 @@ async function loadTodosFromCloud() {
         }
       });
       newTodos[dk] = deduped;
-      // 异步清理云端重复数据
+      // 同步清理云端重复数据
       if (duplicateIds.length > 0 && currentUser) {
-        duplicateIds.forEach(dupId => {
-          if (dupId && !String(dupId).startsWith('local_')) {
-            withTimeout(_supaClient.from('todos').delete().eq('id', dupId), 8000)
-              .catch(() => {});
-          }
-        });
+        const delPromises = duplicateIds
+          .filter(dupId => dupId && !String(dupId).startsWith('local_'))
+          .map(dupId => withTimeout(
+            _supaClient.from('todos').delete().eq('id', dupId),
+            8000
+          ).catch(() => {}));
+        allDedupDeletes.push(...delPromises);
       }
     });
 
-    // 跨日期修复：收集所有已完成任务的文本，如果今天有未完成的顺延副本且原始日期已完成，标记并清理
+    // 等待所有去重删除完成
+    if (allDedupDeletes.length > 0) {
+      await Promise.all(allDedupDeletes);
+    }
+
+    // 跨日期修复：收集所有已完成任务的文本
     const completedTexts = new Set();
     Object.keys(newTodos).forEach(dk => {
       (newTodos[dk] || []).forEach(item => {
@@ -599,21 +622,51 @@ async function loadTodosFromCloud() {
     const cleanupIds = [];
     newTodos[today] = todayList.filter(item => {
       if (item.carriedFrom && !item.done && completedTexts.has(item.text)) {
-        // 这条顺延任务的原文本在其他日期已完成，删除它
         cleanupIds.push(item.id);
         return false;
       }
       return true;
     });
 
-    // 异步清理云端的这些脏数据
+    // 同步等待云端删除完成，确保下次刷新不会再加载到这些脏数据
     if (cleanupIds.length > 0 && currentUser) {
-      cleanupIds.forEach(id => {
-        if (id && !String(id).startsWith('local_')) {
-          withTimeout(_supaClient.from('todos').delete().eq('id', id), 8000)
-            .catch(() => {});
+      const deletePromises = cleanupIds
+        .filter(id => id && !String(id).startsWith('local_'))
+        .map(id => withTimeout(
+          _supaClient.from('todos').delete().eq('id', id),
+          8000
+        ).catch(() => {}));
+      await Promise.all(deletePromises);
+    }
+
+    // 同时清理：过去7天内，已被顺延到今天的原始任务的未完成副本
+    // （即：如果某天的任务已经有 carried_from 指向它的今天版本，原始的应该标记完成）
+    const todayCarriedFroms = new Set();
+    (newTodos[today] || []).forEach(item => {
+      if (item.carriedFrom) todayCarriedFroms.add(item.carriedFrom + '|' + item.text);
+    });
+    
+    const staleCleanupIds = [];
+    Object.keys(newTodos).forEach(dk => {
+      if (dk === today) return;
+      newTodos[dk] = (newTodos[dk] || []).filter(item => {
+        // 如果这个任务在今天有顺延副本，且原始未完成，删除原始的
+        if (!item.done && !item.repeat && todayCarriedFroms.has(dk + '|' + item.text)) {
+          staleCleanupIds.push(item.id);
+          return false;
         }
+        return true;
       });
+    });
+
+    if (staleCleanupIds.length > 0 && currentUser) {
+      const staleDeletePromises = staleCleanupIds
+        .filter(id => id && !String(id).startsWith('local_'))
+        .map(id => withTimeout(
+          _supaClient.from('todos').delete().eq('id', id),
+          8000
+        ).catch(() => {}));
+      await Promise.all(staleDeletePromises);
     }
 
     // 从本地备份恢复子任务和重复任务信息（云端表没有这些字段）
@@ -631,10 +684,6 @@ async function loadTodosFromCloud() {
             // repeat 字段仅在 id 精确匹配时恢复，避免跨记录误赋值
             if (localItemById) {
               item.repeat = localItem.repeat || null;
-            }
-            // carried 标记也从本地恢复
-            if (localItem.carried) {
-              item.carried = true;
             }
             item.time = localItem.time || item.time || null;
             item.endTime = localItem.endTime || item.endTime || null;
@@ -813,10 +862,6 @@ function deduplicateTodos() {
           const idx = deduped.indexOf(existing);
           if (idx !== -1) deduped[idx] = item;
           seen.set(key, item);
-        }
-        // 合并 carried 标记
-        if (item.carried || existing.carried) {
-          seen.get(key).carried = true;
         }
       }
     });
