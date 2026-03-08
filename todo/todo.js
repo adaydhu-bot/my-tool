@@ -217,6 +217,8 @@ function setupAuth() {
         todos = localTodos;
         // 本地缓存去重：同日期内同文本只保留一条
         deduplicateTodos();
+        // 本地缓存也做跨日期已完成任务清理，防止脏数据先渲染
+        cleanLocalTodosBeforeRender();
       }
       if (localIdeas) ideas = localIdeas;
 
@@ -699,6 +701,8 @@ async function loadTodosFromCloud() {
     const localTodos = getLocalTodosBackup();
     if (localTodos) {
       todos = localTodos;
+      deduplicateTodos();
+      cleanLocalTodosBeforeRender();
     }
   }
 }
@@ -866,6 +870,44 @@ function deduplicateTodos() {
       }
     });
     todos[dk] = deduped;
+  });
+}
+
+// 本地缓存渲染前清理：跨日期已完成任务的顺延副本 + 已被顺延的原始副本
+function cleanLocalTodosBeforeRender() {
+  const today = todayKey();
+  
+  // 1. 收集所有已完成任务的文本
+  const completedTexts = new Set();
+  Object.keys(todos).forEach(dk => {
+    (todos[dk] || []).forEach(item => {
+      if (item.done) completedTexts.add(item.text);
+    });
+  });
+
+  // 2. 清理今天的未完成顺延副本（如果该文本在任何日期已完成）
+  const todayList = todos[today] || [];
+  todos[today] = todayList.filter(item => {
+    if (item.carriedFrom && !item.done && completedTexts.has(item.text)) {
+      return false;
+    }
+    return true;
+  });
+
+  // 3. 清理已被顺延到今天的原始未完成副本
+  const todayCarriedFroms = new Set();
+  (todos[today] || []).forEach(item => {
+    if (item.carriedFrom) todayCarriedFroms.add(item.carriedFrom + '|' + item.text);
+  });
+
+  Object.keys(todos).forEach(dk => {
+    if (dk === today) return;
+    todos[dk] = (todos[dk] || []).filter(item => {
+      if (!item.done && !item.repeat && todayCarriedFroms.has(dk + '|' + item.text)) {
+        return false;
+      }
+      return true;
+    });
   });
 }
 
