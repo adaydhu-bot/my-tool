@@ -1,0 +1,21 @@
+{
+  "name": "To Do List",
+  "short_name": "ToDo",
+  "description": "记录每一天，捕捉每个灵感 ✨",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FFF8F0",
+  "theme_color": "#FF8C42",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "../generated-icons/A_clean__modern_app_icon_for_a_2026-03-09T15-50-30.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "lang": "zh-CN",
+  "dir": "ltr"
+}

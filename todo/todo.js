@@ -3290,6 +3290,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (settingsSection) settingsSection.classList.add('active');
       // 齿轮变为激活态
       cornerSettingsBtn.classList.add('settings-active');
+      // 同步底部导航
+      const mobileNav = document.getElementById('mobileBottomNav');
+      if (mobileNav) {
+        mobileNav.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        const settingsNav = mobileNav.querySelector('.nav-item[data-tab="settings"]');
+        if (settingsNav) settingsNav.classList.add('active');
+      }
     });
   }
 
@@ -3306,6 +3313,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (todoSection) todoSection.classList.add('active');
       // 移除齿轮激活态
       if (cornerSettingsBtn) cornerSettingsBtn.classList.remove('settings-active');
+      // 同步底部导航
+      const mobileNav = document.getElementById('mobileBottomNav');
+      if (mobileNav) {
+        mobileNav.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        const todoNav = mobileNav.querySelector('.nav-item[data-tab="todo"]');
+        if (todoNav) todoNav.classList.add('active');
+      }
     });
   }
 
@@ -3801,6 +3815,87 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 加载主题（在登录前就应用）
   loadTheme();
+
+  // ====== 移动端交互 ======
+
+  // 底部导航栏点击处理
+  const mobileBottomNav = document.getElementById('mobileBottomNav');
+  if (mobileBottomNav) {
+    mobileBottomNav.querySelectorAll('.nav-item').forEach(navBtn => {
+      navBtn.addEventListener('click', () => {
+        const tab = navBtn.dataset.tab;
+        // 更新底部导航激活态
+        mobileBottomNav.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        navBtn.classList.add('active');
+        // 切换内容区域
+        document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
+        const section = document.getElementById(tab + 'Section');
+        if (section) section.classList.add('active');
+        // 同步顶部 tab 按钮
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        const topTab = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+        if (topTab) topTab.classList.add('active');
+        // 齿轮按钮状态
+        const csb = document.getElementById('cornerSettingsBtn');
+        if (tab === 'settings') {
+          if (csb) csb.classList.add('settings-active');
+        } else {
+          if (csb) csb.classList.remove('settings-active');
+        }
+        // 渲染总结页
+        if (tab === 'summary') renderSummaryFull();
+      });
+    });
+  }
+
+  // 顶部 Tab 切换时同步底部导航
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (mobileBottomNav) {
+        mobileBottomNav.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        const navItem = mobileBottomNav.querySelector(`.nav-item[data-tab="${btn.dataset.tab}"]`);
+        if (navItem) navItem.classList.add('active');
+      }
+    });
+  });
+
+  // 日历折叠/展开（移动端）
+  const calendarToggleBar = document.getElementById('calendarToggleBar');
+  const calendarPanel = document.getElementById('calendarPanel');
+  if (calendarToggleBar && calendarPanel) {
+    // 从 localStorage 恢复折叠状态（默认折叠）
+    const calCollapsed = localStorage.getItem('calendarCollapsed');
+    if (calCollapsed === 'false') {
+      calendarPanel.classList.remove('collapsed');
+    } else {
+      calendarPanel.classList.add('collapsed');
+    }
+    calendarToggleBar.addEventListener('click', () => {
+      calendarPanel.classList.toggle('collapsed');
+      localStorage.setItem('calendarCollapsed', calendarPanel.classList.contains('collapsed'));
+    });
+  }
+
+  // 移动端禁用拖拽排序
+  if (window.innerWidth <= 768 || 'ontouchstart' in window) {
+    document.querySelectorAll('.todo-item').forEach(item => {
+      item.setAttribute('draggable', 'false');
+    });
+    // 劫持未来新增的 todo-item（使用 MutationObserver）
+    const todoList = document.getElementById('todoList');
+    if (todoList) {
+      const observer = new MutationObserver(mutations => {
+        mutations.forEach(m => {
+          m.addedNodes.forEach(node => {
+            if (node.nodeType === 1 && node.classList && node.classList.contains('todo-item')) {
+              node.setAttribute('draggable', 'false');
+            }
+          });
+        });
+      });
+      observer.observe(todoList, { childList: true, subtree: true });
+    }
+  }
 
   // 启动认证
   setupAuth();

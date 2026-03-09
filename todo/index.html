@@ -2,9 +2,19 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>To Do List</title>
   <link rel="icon" type="image/png" href="../favicon.png">
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#FF8C42">
+  <!-- iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="To Do List">
+  <link rel="apple-touch-icon" href="../generated-icons/A_clean__modern_app_icon_for_a_2026-03-09T15-50-30.png">
+  <!-- Android -->
+  <meta name="mobile-web-app-capable" content="yes">
   <link rel="stylesheet" href="todo.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -152,18 +162,27 @@
       <div class="main-layout">
         <!-- 左侧：日历 + 今日日程 -->
         <div class="left-col">
-          <div class="calendar-panel card">
-            <div class="calendar-header">
-              <button class="cal-nav-btn" id="prevMonth">‹</button>
-              <span class="cal-title" id="calTitle"></span>
-              <button class="cal-nav-btn" id="nextMonth">›</button>
+          <div class="calendar-panel card collapsed" id="calendarPanel">
+            <div class="calendar-toggle-bar" id="calendarToggleBar">
+              <div class="toggle-left">
+                <span class="toggle-icon">📅</span>
+                <span>日历</span>
+              </div>
+              <span class="toggle-arrow">▼</span>
             </div>
-            <div class="calendar-weekdays">
-              <span>日</span><span>一</span><span>二</span><span>三</span>
-              <span>四</span><span>五</span><span>六</span>
+            <div class="calendar-inner">
+              <div class="calendar-header">
+                <button class="cal-nav-btn" id="prevMonth">‹</button>
+                <span class="cal-title" id="calTitle"></span>
+                <button class="cal-nav-btn" id="nextMonth">›</button>
+              </div>
+              <div class="calendar-weekdays">
+                <span>日</span><span>一</span><span>二</span><span>三</span>
+                <span>四</span><span>五</span><span>六</span>
+              </div>
+              <div class="calendar-grid" id="calendarGrid"></div>
+              <button class="today-btn" id="todayBtn">回到今天</button>
             </div>
-            <div class="calendar-grid" id="calendarGrid"></div>
-            <button class="today-btn" id="todayBtn">回到今天</button>
           </div>
 
           <!-- 今日日程面板 -->
@@ -538,6 +557,34 @@
   <!-- 撤销 Toast -->
   <div class="undo-toast-container" id="undoToastContainer"></div>
 
+  <!-- 底部导航栏（移动端） -->
+  <nav class="mobile-bottom-nav" id="mobileBottomNav">
+    <button class="nav-item active" data-tab="todo">
+      <span class="nav-icon">📝</span>
+      <span>待办</span>
+    </button>
+    <button class="nav-item" data-tab="ideas">
+      <span class="nav-icon">💡</span>
+      <span>灵感</span>
+    </button>
+    <button class="nav-item" data-tab="summary">
+      <span class="nav-icon">📊</span>
+      <span>统计</span>
+    </button>
+    <button class="nav-item" data-tab="settings">
+      <span class="nav-icon">⚙️</span>
+      <span>设置</span>
+    </button>
+  </nav>
+
   <script src="todo.js"></script>
+  <script>
+    // PWA Service Worker 注册
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
