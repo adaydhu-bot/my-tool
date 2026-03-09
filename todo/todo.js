@@ -8,6 +8,9 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const _supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ========== 常量 ==========
+const REPEAT_CONFIG_DATE = '__repeat_templates__';
+
 // ========== 状态管理 ==========
 let todos = {};
 let ideas = [];
@@ -250,6 +253,8 @@ function setupAuth() {
           await carryOverUnfinishedTodos();
           generateRepeatingTodos();
           backupTodosToLocal();
+          // 同步 repeat 模板到云端（确保所有浏览器都能获取）
+          await syncRepeatTemplatesToCloud();
         } catch (err) {
           console.error('顺延/重复任务处理失败:', err);
         }
@@ -462,6 +467,7 @@ function generateRepeatingTodos() {
 function collectRepeatTemplates() {
   const repeatTemplates = [];
   Object.keys(todos).forEach(dk => {
+    if (dk === REPEAT_CONFIG_DATE) return; // 跳过配置记录
     (todos[dk] || []).forEach(item => {
       if (item.repeat) {
         repeatTemplates.push({ ...item, _sourceDate: dk });
@@ -614,6 +620,7 @@ async function loadTodosFromCloud() {
     const newTodos = {};
     if (data) {
       data.forEach(item => {
+        if (item.date === REPEAT_CONFIG_DATE) return; // 跳过 repeat 配置记录
         if (!newTodos[item.date]) newTodos[item.date] = [];
         const todoItem = {
           id: item.id,
@@ -760,6 +767,9 @@ async function loadTodosFromCloud() {
     }
 
     todos = newTodos;
+
+    // 从云端加载重复任务模板信息并恢复到 todos 中
+    await loadRepeatTemplatesFromCloud();
   } catch (err) {
     console.error('加载待办超时/异常:', err);
     const localTodos = getLocalTodosBackup();
@@ -804,6 +814,124 @@ async function loadIdeasFromCloud() {
   }
 }
 
+// ========== 重复任务云端同步（不依赖表结构变更） ==========
+// 将 repeat 模板信息存储为一条特殊的 todo 记录，date='__repeat_templates__'
+
+async function syncRepeatTemplatesToCloud() {
+  if (!currentUser) return;
+  try {
+    const templates = collectRepeatTemplates();
+    const configData = Object.values(templates).map(t => ({
+      text: t.text,
+      priority: t.priority,
+      repeat: t.repeat,
+      createdAt: t.createdAt,
+      time: t.time || null,
+      endTime: t.endTime || null
+    }));
+    const configText = JSON.stringify(configData);
+
+    // 查找是否已有配置记录
+    const { data: existing } = await withTimeout(
+      _supaClient.from('todos')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('date', REPEAT_CONFIG_DATE)
+        .limit(1),
+      8000
+    );
+
+    if (existing && existing.length > 0) {
+      // 更新已有配置
+      await withTimeout(
+        _supaClient.from('todos')
+          .update({ text: configText })
+          .eq('id', existing[0].id),
+        8000
+      );
+    } else if (configData.length > 0) {
+      // 新建配置记录
+      await withTimeout(
+        _supaClient.from('todos').insert({
+          user_id: currentUser.id,
+          date: REPEAT_CONFIG_DATE,
+          text: configText,
+          priority: 'low',
+          done: false
+        }),
+        8000
+      );
+    }
+  } catch (e) {
+    console.warn('同步重复模板到云端失败:', e);
+  }
+}
+
+async function loadRepeatTemplatesFromCloud() {
+  if (!currentUser) return;
+  try {
+    const { data } = await withTimeout(
+      _supaClient.from('todos')
+        .select('text')
+        .eq('user_id', currentUser.id)
+        .eq('date', REPEAT_CONFIG_DATE)
+        .limit(1),
+      8000
+    );
+
+    if (!data || data.length === 0) return;
+
+    const configData = JSON.parse(data[0].text);
+    if (!Array.isArray(configData) || configData.length === 0) return;
+
+    // 将云端 repeat 模板信息恢复到对应的 todo 中
+    configData.forEach(template => {
+      if (!template.repeat) return;
+      // 查找所有日期中 text 匹配的任务，恢复 repeat 信息
+      Object.keys(todos).forEach(dk => {
+        if (dk === REPEAT_CONFIG_DATE) return;
+        (todos[dk] || []).forEach(item => {
+          if (item.text === template.text && !item.repeat) {
+            item.repeat = template.repeat;
+          }
+        });
+      });
+    });
+
+    // 如果存在云端 repeat 模板但本地没有对应的 todo 来承载，
+    // 确保 collectRepeatTemplates 能找到至少一个带 repeat 标记的实例
+    configData.forEach(template => {
+      if (!template.repeat) return;
+      const hasInstance = Object.keys(todos).some(dk =>
+        dk !== REPEAT_CONFIG_DATE && (todos[dk] || []).some(t => t.text === template.text && t.repeat)
+      );
+      if (!hasInstance) {
+        // 在一个合理的日期创建一个"种子"实例，让 collectRepeatTemplates 能发现它
+        const seedDate = todayKey();
+        if (!todos[seedDate]) todos[seedDate] = [];
+        const alreadyExists = todos[seedDate].some(t => t.text === template.text);
+        if (!alreadyExists) {
+          todos[seedDate].push({
+            id: tempId(),
+            text: template.text,
+            priority: template.priority || 'mid',
+            done: false,
+            createdAt: template.createdAt || new Date().toISOString(),
+            carriedFrom: null,
+            subtasks: [],
+            repeat: template.repeat,
+            time: template.time || null,
+            endTime: template.endTime || null,
+            order: todos[seedDate].length
+          });
+        }
+      }
+    });
+  } catch (e) {
+    console.warn('从云端加载重复模板失败:', e);
+  }
+}
+
 // ========== 本地备份 ==========
 function backupTodosToLocal() {
   try {
@@ -844,6 +972,7 @@ async function restoreFromLocalBackup() {
     const allLocalItems = Object.values(localTodos).flat();
     if (allLocalItems.length > 0) {
       for (const dk of Object.keys(localTodos)) {
+        if (dk === REPEAT_CONFIG_DATE) continue; // 跳过 repeat 配置
         for (const item of localTodos[dk]) {
           try {
             const { data, error } = await withTimeout(
@@ -1638,6 +1767,10 @@ function saveEdit() {
   backupTodosToLocal();
   renderTodoList();
   updateTodoHeader();
+
+  // repeat 变更后同步到云端
+  syncRepeatTemplatesToCloud();
+
   closeEditDialog();
 }
 
@@ -1798,6 +1931,9 @@ async function addTodo() {
   renderTodoList();
   renderCalendar();
   updateTodoHeader();
+
+  // 如果添加了重复任务，同步模板到云端
+  if (repeat) syncRepeatTemplatesToCloud();
 
   isAddingTodo = false;
   addBtn.disabled = false;
@@ -2013,6 +2149,9 @@ async function deleteTodo(id) {
   updateTodoHeader();
   renderCalendar();
 
+  // 如果删除的是重复任务，同步模板
+  if (deletedItem.repeat) syncRepeatTemplatesToCloud();
+
   const displayText = deletedItem.text.length > 12 ? deletedItem.text.slice(0, 12) + '...' : deletedItem.text;
 
   showUndoToast(
@@ -2026,6 +2165,8 @@ async function deleteTodo(id) {
       renderTodoList();
       updateTodoHeader();
       renderCalendar();
+      // 撤销后重新同步
+      if (deletedItem.repeat) syncRepeatTemplatesToCloud();
     },
     // 确认删除回调（真正删除云端）
     () => {
