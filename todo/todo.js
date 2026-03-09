@@ -3332,6 +3332,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // 编辑弹窗
   document.getElementById('editCancelBtn').addEventListener('click', closeEditDialog);
   document.getElementById('editSaveBtn').addEventListener('click', saveEdit);
+  document.getElementById('editDeleteBtn').addEventListener('click', () => {
+    if (editingTodoId) {
+      const idToDelete = editingTodoId;
+      closeEditDialog();
+      deleteTodo(idToDelete);
+    }
+  });
   document.getElementById('editOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeEditDialog();
   });

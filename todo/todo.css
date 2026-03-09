@@ -1717,8 +1717,31 @@ body::after {
 
 .edit-actions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.edit-actions-right {
+  display: flex;
   gap: 12px;
-  justify-content: flex-end;
+}
+
+.edit-delete-btn {
+  padding: 10px 20px;
+  border: 2px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.edit-delete-btn:hover {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
 }
 
 .edit-cancel-btn {
