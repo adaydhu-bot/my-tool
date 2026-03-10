@@ -1,5 +1,5 @@
 // Service Worker for To Do List PWA
-const CACHE_NAME = 'todo-pwa-v2';
+const CACHE_NAME = 'todo-pwa-v3';
 const PRECACHE_URLS = [
   './',
   './index.html',

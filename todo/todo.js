@@ -199,6 +199,7 @@ function setupAuth() {
       if (appInitialized && event === 'TOKEN_REFRESHED') return;
 
       startHeartbeat();
+      startAllSync();
 
       let nickname = session.user.user_metadata?.nickname;
       if (!nickname) {
@@ -265,6 +266,7 @@ function setupAuth() {
       currentUser = null;
       appInitialized = false;
       stopHeartbeat();
+      stopAllSync();
       document.getElementById('app').style.display = 'none';
       overlay.classList.remove('hidden');
     }
@@ -3242,6 +3244,139 @@ function stopHeartbeat() {
 }
 
 // ================================================================
+// 实时同步模块：跨设备数据自动同步
+// ================================================================
+let realtimeChannel = null;
+let syncPollingTimer = null;
+let lastSyncTime = 0;
+const SYNC_COOLDOWN = 3000; // 最小同步间隔 3 秒，防止重复刷新
+
+// 静默刷新数据（不闪屏，不重置滚动位置）
+async function silentRefreshData() {
+  const now = Date.now();
+  if (now - lastSyncTime < SYNC_COOLDOWN) return; // 防抖
+  lastSyncTime = now;
+
+  if (!currentUser) return;
+
+  try {
+    await loadAllData();
+    // 刷新 UI
+    renderCalendar();
+    renderTodoList();
+    updateTodoHeader();
+    updateProgressBar();
+    renderIdeasList();
+    updateIdeaStats();
+    console.log('[sync] 数据已同步', new Date().toLocaleTimeString());
+  } catch (err) {
+    console.error('[sync] 同步失败:', err);
+  }
+}
+
+// 1. Supabase Realtime 订阅 - 实时监听数据库变更
+function startRealtimeSubscription() {
+  if (realtimeChannel) {
+    _supaClient.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+  if (!currentUser) return;
+
+  realtimeChannel = _supaClient
+    .channel('todos-sync-' + currentUser.id)
+    .on(
+      'postgres_changes',
+      {
+        event: '*', // INSERT, UPDATE, DELETE
+        schema: 'public',
+        table: 'todos',
+        filter: 'user_id=eq.' + currentUser.id
+      },
+      (payload) => {
+        console.log('[realtime] todos 变更:', payload.eventType);
+        silentRefreshData();
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'ideas',
+        filter: 'user_id=eq.' + currentUser.id
+      },
+      (payload) => {
+        console.log('[realtime] ideas 变更:', payload.eventType);
+        silentRefreshData();
+      }
+    )
+    .subscribe((status) => {
+      console.log('[realtime] 订阅状态:', status);
+    });
+}
+
+function stopRealtimeSubscription() {
+  if (realtimeChannel) {
+    _supaClient.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
+// 2. 页面可见性变化 - 手机切回前台时自动刷新
+function setupVisibilitySync() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentUser) {
+      console.log('[sync] 页面恢复可见，刷新数据...');
+      silentRefreshData();
+    }
+  });
+
+  // iOS PWA 回到前台时 visibilitychange 可能不触发，额外监听 pageshow
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted && currentUser) {
+      console.log('[sync] pageshow (bfcache)，刷新数据...');
+      silentRefreshData();
+    }
+  });
+
+  // 窗口获得焦点时也刷新（桌面浏览器 tab 切换）
+  window.addEventListener('focus', () => {
+    if (currentUser) {
+      silentRefreshData();
+    }
+  });
+}
+
+// 3. 定期轮询 - 兜底保障，每 2 分钟拉取一次
+function startSyncPolling() {
+  stopSyncPolling();
+  syncPollingTimer = setInterval(() => {
+    if (currentUser && document.visibilityState === 'visible') {
+      silentRefreshData();
+    }
+  }, 2 * 60 * 1000); // 2 分钟
+}
+
+function stopSyncPolling() {
+  if (syncPollingTimer) {
+    clearInterval(syncPollingTimer);
+    syncPollingTimer = null;
+  }
+}
+
+// 启动所有同步机制
+function startAllSync() {
+  startRealtimeSubscription();
+  startSyncPolling();
+}
+
+// 停止所有同步机制
+function stopAllSync() {
+  stopRealtimeSubscription();
+  stopSyncPolling();
+}
+
+// ================================================================
 // 初始化
 // ================================================================
 function initApp() {
@@ -3896,6 +4031,9 @@ document.addEventListener('DOMContentLoaded', () => {
       observer.observe(todoList, { childList: true, subtree: true });
     }
   }
+
+  // 初始化页面可见性同步（visibilitychange / focus / pageshow）
+  setupVisibilitySync();
 
   // 启动认证
   setupAuth();
