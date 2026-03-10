@@ -238,6 +238,7 @@ function setupAuth() {
       loadSettings();
       initWaterReminder();
       initTodoReminder();
+      initScheduleAlert();
 
       // ====== 后台异步加载云端数据，完成后静默刷新 ======
       (async () => {
@@ -3185,6 +3186,178 @@ function hideTodoReminder() {
 }
 
 // ================================================================
+// 模块六-B：日程提前提醒（开始前 15 分钟）
+// ================================================================
+let scheduleAlertInterval = null;
+const SCHEDULE_ALERT_ADVANCE = 15; // 提前几分钟提醒
+const alertedSchedules = new Set(); // 已提醒过的 id，防止重复
+
+function initScheduleAlert() {
+  // 每 30 秒检查一次日程
+  if (scheduleAlertInterval) clearInterval(scheduleAlertInterval);
+  scheduleAlertInterval = setInterval(checkScheduleAlerts, 30000);
+  // 立即检查一次
+  checkScheduleAlerts();
+
+  // 请求浏览器通知权限（用于后台推送）
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function checkScheduleAlerts() {
+  if (!currentUser) return;
+
+  const todayStr = todayKey();
+  const todayItems = getTodosForDate(todayStr);
+  const timedItems = todayItems.filter(t => t.time && !t.done);
+
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  timedItems.forEach(item => {
+    const [h, m] = item.time.split(':').map(Number);
+    const itemMinutes = h * 60 + m;
+    const diff = itemMinutes - nowMinutes; // 距离开始还有几分钟
+
+    // 已经提醒过了
+    if (alertedSchedules.has(item.id)) return;
+
+    // 在提前 15 分钟到开始时间之间触发（即 diff ∈ [0, 15]）
+    if (diff >= 0 && diff <= SCHEDULE_ALERT_ADVANCE) {
+      alertedSchedules.add(item.id);
+      triggerScheduleAlert(item, diff);
+    }
+  });
+
+  // 清理过期的 alertedSchedules（跨天重置）
+  if (now.getHours() === 0 && now.getMinutes() === 0) {
+    alertedSchedules.clear();
+  }
+}
+
+function triggerScheduleAlert(item, minutesLeft) {
+  const displayName = stripTimeFromText(item.text);
+  const countdownText = minutesLeft === 0 ? '即将开始！' : `${minutesLeft} 分钟后开始`;
+
+  // 1. 播放提示音
+  playAlertSound();
+
+  // 2. 根据屏幕宽度决定显示方式
+  const isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    showScheduleToast(item.time, displayName, countdownText);
+  } else {
+    showScheduleAlertDialog(item.time, displayName, countdownText);
+  }
+
+  // 3. 发送浏览器通知（适用于后台场景）
+  sendBrowserNotification(displayName, item.time, countdownText);
+}
+
+// ----- 桌面端居中弹窗 -----
+function showScheduleAlertDialog(time, name, countdown) {
+  const overlay = document.getElementById('scheduleAlertOverlay');
+  document.getElementById('scheduleAlertTime').textContent = time;
+  document.getElementById('scheduleAlertName').textContent = name;
+  document.getElementById('scheduleAlertCountdown').textContent = countdown;
+
+  overlay.style.display = 'flex';
+  overlay.classList.add('show');
+}
+
+function hideScheduleAlertDialog() {
+  const overlay = document.getElementById('scheduleAlertOverlay');
+  overlay.classList.remove('show');
+  overlay.style.display = 'none';
+}
+
+// ----- 手机端顶部 Toast -----
+let scheduleToastTimer = null;
+
+function showScheduleToast(time, name, countdown) {
+  const toast = document.getElementById('scheduleToast');
+  document.getElementById('scheduleToastTitle').textContent = `🔔 日程提醒 · ${countdown}`;
+  document.getElementById('scheduleToastText').textContent = `${time}  ${name}`;
+
+  toast.classList.add('show');
+
+  // 8 秒后自动收起
+  if (scheduleToastTimer) clearTimeout(scheduleToastTimer);
+  scheduleToastTimer = setTimeout(() => {
+    hideScheduleToast();
+  }, 8000);
+}
+
+function hideScheduleToast() {
+  const toast = document.getElementById('scheduleToast');
+  toast.classList.remove('show');
+  if (scheduleToastTimer) {
+    clearTimeout(scheduleToastTimer);
+    scheduleToastTimer = null;
+  }
+}
+
+// ----- 浏览器 Notification（后台/锁屏） -----
+function sendBrowserNotification(name, time, countdown) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  try {
+    const n = new Notification('📅 日程提醒', {
+      body: `${time}  ${name}\n${countdown}`,
+      icon: '../generated-icons/A_cute_girly_app_icon_for_a_To_2026-03-09T16-38-01.png',
+      tag: 'schedule-alert-' + time, // 防止重复通知
+      requireInteraction: false
+    });
+
+    // 点击通知聚焦窗口
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+
+    // 10 秒后自动关闭
+    setTimeout(() => n.close(), 10000);
+  } catch (e) {
+    console.warn('[scheduleAlert] 浏览器通知失败:', e);
+  }
+}
+
+// ----- 提示音（Web Audio API，无需音频文件） -----
+function playAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // 旋律：三个递进音符，清脆愉悦
+    const notes = [
+      { freq: 880, start: 0, dur: 0.15 },    // A5
+      { freq: 1047, start: 0.18, dur: 0.15 }, // C6
+      { freq: 1319, start: 0.36, dur: 0.25 }  // E6
+    ];
+
+    notes.forEach(({ freq, start, dur }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + start + dur);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    });
+
+    // 清理 AudioContext
+    setTimeout(() => ctx.close(), 2000);
+  } catch (e) {
+    console.warn('[scheduleAlert] 音效播放失败:', e);
+  }
+}
+
+// ================================================================
 // 模块七：设置管理
 // ================================================================
 
@@ -3618,6 +3791,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reminderOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) hideTodoReminder();
   });
+
+  // 日程提醒弹窗关闭（桌面端）
+  document.getElementById('scheduleAlertCloseBtn').addEventListener('click', hideScheduleAlertDialog);
+  document.getElementById('scheduleAlertOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) hideScheduleAlertDialog();
+  });
+
+  // 日程提醒 Toast 关闭（手机端）
+  document.getElementById('scheduleToastClose').addEventListener('click', hideScheduleToast);
 
   // 编辑弹窗
   document.getElementById('editCancelBtn').addEventListener('click', closeEditDialog);

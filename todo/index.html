@@ -496,6 +496,30 @@
     </div>
   </div>
 
+  <!-- 日程提醒弹窗（桌面端居中弹窗） -->
+  <div class="schedule-alert-overlay" id="scheduleAlertOverlay" style="display:none;">
+    <div class="schedule-alert-card">
+      <div class="schedule-alert-emoji">🔔</div>
+      <h3 class="schedule-alert-title" id="scheduleAlertTitle">日程即将开始</h3>
+      <div class="schedule-alert-body">
+        <div class="schedule-alert-time" id="scheduleAlertTime">12:00</div>
+        <div class="schedule-alert-name" id="scheduleAlertName">会议</div>
+        <div class="schedule-alert-countdown" id="scheduleAlertCountdown">15 分钟后开始</div>
+      </div>
+      <button class="schedule-alert-close-btn" id="scheduleAlertCloseBtn">知道了 👌</button>
+    </div>
+  </div>
+
+  <!-- 日程提醒 Toast（手机端顶部滑入） -->
+  <div class="schedule-toast" id="scheduleToast">
+    <div class="schedule-toast-icon">🔔</div>
+    <div class="schedule-toast-content">
+      <div class="schedule-toast-title" id="scheduleToastTitle">日程提醒</div>
+      <div class="schedule-toast-text" id="scheduleToastText">15 分钟后开始</div>
+    </div>
+    <button class="schedule-toast-close" id="scheduleToastClose">✕</button>
+  </div>
+
   <!-- 编辑待办弹窗 -->
   <div class="edit-overlay" id="editOverlay" style="display:none;">
     <div class="edit-card">
